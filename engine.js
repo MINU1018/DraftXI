@@ -424,7 +424,9 @@ const tY = (T, y) => -T.dir * y / HW;
 const wX = (T, tx) => T.dir * (tx * 105 - HL);
 const wY = (T, ty) => -T.dir * ty * HW;
 const maxSpd = p => (5.6 + E(p, 'pace') * .04);
-const maxAcc = p => (2.5 + E(p, 'accel') * .045);
+const maxAcc = p => (2.5 + E(p, 'accel') * .03);
+// 몸을 돌리는 속도(rad/s): 빨리 달릴수록 방향을 급히 틀기 어려움. 민첩성이 높으면 조금 더 빠름
+const turnRate = (p, sp) => (sp > 6 ? 3.6 : sp > 3.5 ? 5.5 : sp > 1.5 ? 8 : 11) * (.8 + E(p, 'agility') * .004);
 function minute(M) { const m = M.half === 1 ? Math.floor(M.t / 60) + 1 : Math.floor(M.t / 60) + 1; const lim = M.half === 1 ? 45 : 90; return m > lim ? lim + '+' + (m - lim) : '' + m; }
 function ev(M, type, side, text, extra) { const e = Object.assign({ t: M.t, min: minute(M), type, side, text, frame: M.rec ? M.rec.n : 0 }, extra || {}); M.events.push(e); if (M.onEvent) M.onEvent(e); return e; }
 function nearestOpp(M, p, x, y) { let best = null, bd = 1e9; for (const o of active(opp(M, p.team))) { const d = hyp(o.x - x, o.y - y); if (d < bd) { bd = d; best = o; } } return [best, bd]; }
@@ -492,8 +494,8 @@ function kickTo(M, p, px, py, kind, acc, opts) {
   let turn = Math.abs(angDiff(want, p.face));
   const bodyPen = turn > 1.8 ? 1.35 : turn > 1.1 ? 1.12 : 1;
   const wxk = M.wx ? 1 + M.wx.wet * .12 + M.wx.slow * .08 + hyp(M.wx.wind[0], M.wx.wind[1]) * (kind === 'ground' ? 0 : .012) : 1;
-  const sigA = (.011 + (100 - acc) * .0008) * (1 + pressure * .5) * bodyPen * wxk;
-  const sigP = (.03 + (100 - acc) * .0016) * (1 + pressure * .4) * wxk;
+  const sigA = (.0095 + (100 - acc) * .0007) * (1 + pressure * .5) * bodyPen * wxk;
+  const sigP = (.026 + (100 - acc) * .0014) * (1 + pressure * .4) * wxk;
   const ang = want + r.gauss() * sigA;
   const dist = d * (1 + r.gauss() * sigP);
   const power = E(p, 'shotPower');
@@ -909,15 +911,18 @@ function assignChasers(M) {
   if (passT) { const a = arr.get(f.target); if (a) { f.target.tx = a.q.x; f.target.ty = a.q.y; f.target.urg = 1; tRecv = a.t; } }
   for (const T of M.teams) {
     const list = active(T).filter(p => arr.has(p)).map(p => [p, arr.get(p)]).sort((x, y) => x[1].t - y[1].t || hyp(x[1].q.x - x[0].x, x[1].q.y - x[0].y) - hyp(y[1].q.x - y[0].x, y[1].q.y - y[0].y));
-    if (passT === T) { // 패스한 팀: 받는 선수 외 1명만 보조
-      const sup = list.find(e => e[0] !== f.target && e[1].t < Infinity); if (sup && sup[1].t < tRecv - .3) { sup[0].tx = sup[1].q.x; sup[0].ty = sup[1].q.y; sup[0].urg = .95; }
+    if (passT === T) { // 패스한 팀: 받는 선수가 못 닿거나 늦으면 가까운 동료가 대신 받으러 감
+      const sup = list.find(e => e[0] !== f.target && e[1].t < Infinity); if (sup && (sup[1].t < tRecv - .3 || tRecv === Infinity)) { sup[0].tx = sup[1].q.x; sup[0].ty = sup[1].q.y; sup[0].urg = tRecv === Infinity ? 1 : .95; }
       continue;
     }
-    if (passT) { // 수비 팀: 받는 선수보다 먼저 닿을 수 있을 때만 끊으러 감
-      const c = list[0]; if (c && c[1].t < tRecv + .1) { c[0].tx = c[1].q.x; c[0].ty = c[1].q.y; c[0].urg = 1; }
+    if (passT) { // 수비 팀: 받는 선수보다 먼저(또는 거의 동시에) 닿을 수 있으면 끊으러 감. 공이 바로 옆을 지나가는 선수는 발을 뻗음
+      let n = 0;
+      for (const [p, a] of list) { if (a.t === Infinity) break; const dq = hyp(a.q.x - p.x, a.q.y - p.y);
+        if ((n === 0 && a.t < tRecv + .3) || (n === 1 && a.t < tRecv) || (dq < 3.2 && a.t < tRecv + .2)) { p.tx = a.q.x; p.ty = a.q.y; p.urg = 1; n++; } if (n >= 3) break; }
       continue;
     }
-    for (let i = 0; i < Math.min(2, list.length); i++) { const [p, a] = list[i]; p.tx = a.q.x; p.ty = a.q.y; p.urg = 1; }
+    // 주인 없는 공: 팀마다 가장 빨리 닿는 2명이 달려들고, 공이 지나갈 길목 가까이 있는 선수도 그 자리로 움직임
+    for (let i = 0, n = 0; i < list.length && n < 3; i++) { const [p, a] = list[i]; if (i < 2 || (a.t < Infinity && hyp(a.q.x - p.x, a.q.y - p.y) < 4)) { p.tx = a.q.x; p.ty = a.q.y; p.urg = 1; n++; } }
   }
 }
 function inOwnBox(T, q) { return q && -fwd(T, q.x) > BOX_X && Math.abs(q.y) < BOX_Y; }
@@ -941,13 +946,16 @@ function movePlayers(M) {
     if (own) want = d < .25 ? 0 : Math.min(ms, d * 1.8);
     else { // 급한 정도(urg)에 따라 걷기 → 조깅 → 전력 질주로 연속적으로 바뀜 (갑자기 뛰기 시작하는 느낌 완화)
       const u = clamp((urg - .6) / .4, 0, 1), us = u * u * (3 - 2 * u);
-      const cap = ms * (.6 + .4 * us);
+      const cap = ms * (.52 + .48 * us);
       const dz = p.code === 'GK' ? .3 : (us > .8 ? .25 : 1.0);
       want = d < dz ? 0 : Math.min(cap, .6 + (d - dz) * (.55 + 1.3 * us));
     }
     if (M.phase !== 'play') want = d < .6 ? 0 : Math.min(ms * .4, .8 + d * .25);
     const tvx = d > 0 ? dx / d * want : 0, tvy = d > 0 ? dy / d * want : 0;
-    let ax = tvx - p.vx, ay = tvy - p.vy; const al = hyp(ax, ay); const am = maxAcc(p) * DT * (own ? .8 : 1);
+    // 관성: 가속은 속도가 붙을수록 약해지고, 제동은 가속보다 강함. 달리는 방향과 크게 다른 쪽으로 가려면 먼저 속도를 죽여야 함
+    let ax = tvx - p.vx, ay = tvy - p.vy; const al = hyp(ax, ay); const sp0 = hyp(p.vx, p.vy);
+    const along = sp0 > .3 ? (ax * p.vx + ay * p.vy) / sp0 : 1;
+    const am = maxAcc(p) * (along >= 0 ? 1 - .5 * clamp(sp0 / ms, 0, 1) : 1.3) * DT * (own ? .8 : 1);
     if (al > am) { ax *= am / al; ay *= am / al; }
     p.vx += ax; p.vy += ay; p.x += p.vx * DT; p.y += p.vy * DT; p.dist += hyp(p.vx, p.vy) * DT;
     if (M.phase === 'play') { p.sx += p.x * p.team.dir; p.sy += p.y * p.team.dir; p.sn++;
@@ -955,8 +963,9 @@ function movePlayers(M) {
       if (M.tick % 5 === 0) { const hm = p.hm || (p.hm = new Uint16Array(HM_W * HM_H)); const cx = clamp(Math.floor((p.x * p.team.dir + HL) / 105 * HM_W), 0, HM_W - 1), cy = clamp(Math.floor((p.y * p.team.dir + HW) / 68 * HM_H), 0, HM_H - 1); hm[cy * HM_W + cx]++; } }
     p.x = clamp(p.x, -HL - 3, HL + 3); p.y = clamp(p.y, -HW - 3, HW + 3);
     const sp = hyp(p.vx, p.vy);
-    if (sp > .6 && !(p.anim >= 1 && p.anim <= 7 && p.animT < .5)) p.face = Math.atan2(p.vy, p.vx);
-    else if (!own) { const bf = Math.atan2(M.ball.y - p.y, M.ball.x - p.x); p.face += angDiff(bf, p.face) * .2; }
+    // 몸 방향은 한 번에 돌지 않고 회전 속도 한계 안에서 따라감 (공을 차려고 조준 중이면 그 방향으로)
+    { let tf = null; if (own && p.aim != null) tf = p.aim; else if (sp > .6 && !(p.anim >= 1 && p.anim <= 7 && p.animT < .5)) tf = Math.atan2(p.vy, p.vx); else if (!own) tf = Math.atan2(M.ball.y - p.y, M.ball.x - p.x);
+      if (tf != null) { const w = turnRate(p, sp) * DT; p.face += clamp(angDiff(tf, p.face), -w, w); if (p.face > Math.PI) p.face -= 2 * Math.PI; else if (p.face < -Math.PI) p.face += 2 * Math.PI; } }
     // 체력 소모
     // 체력 소모: 달린 거리·속도(전력 질주일수록 크게)와 스태미너에 비례. 90분 풀타임이면 보통 40~65%까지 떨어짐
     const sf = clamp(1.75 - p.s.stamina * .0125, .5, 1.3) * (M.wx ? 1 + M.wx.heat * .14 + M.wx.slow * .1 : 1);
@@ -1096,6 +1105,10 @@ function decide(M, p) {
       takeShot(M, p, type); break;
     }
     case 'pass': {
+      // 차는 방향으로 몸을 먼저 돌림: 많이 틀어야 하면 그만큼 시간이 걸림 (등진 채로 바로 뿌리지 못함)
+      { const want = Math.atan2(ch.cy - b.y, ch.cx - b.x); const turn = Math.abs(angDiff(want, p.face));
+        if (turn > .85 && (p.aimN || 0) < 2 && pressure < .85) { p.aim = want; p.aimN = (p.aimN || 0) + 1; p.tx = p.x; p.ty = p.y; p.urg = .4; p.dribbling = false; p.decT = clamp((turn - .5) / turnRate(p, 0) + .06, .1, .45); return; } }
+      p.aim = null;
       const kind = ch.kind; T.st.passes++; p.r.pass++;
       // 크로스: 바로 앞을 막은 수비수에게 맞으면 대개 골라인 쪽으로 굴절 (코너킥의 주된 원인)
       if (kind === 'cross') { const bl = active(O).find(o => o.code !== 'GK' && o.stun <= 0 && hyp(o.x - b.x, o.y - b.y) < 3 && ((o.x - b.x) * (ch.cx - b.x) + (o.y - b.y) * (ch.cy - b.y)) > 0);
@@ -1272,7 +1285,7 @@ function ballContacts(M) {
     }
     // 상대 패스 가로채기
     const intc = E(p, 'interceptions') * .6 + E(p, 'reactions') * .25 + E(p, 'agility') * .15;
-    const diff = 48 + sp * 2.1 + (b.z > .5 ? 10 : 0);
+    const diff = 54 + sp * 2.1 + (b.z > .5 ? 10 : 0);
     if (r() < sig((intc - diff) / 13)) {
       if (M.dbg) M.dbg.inter = (M.dbg.inter || 0) + 1;
       if (r() < sig((ctl - 30 - sp * 1.5) / 12)) { p.r.int++; pT.st.inter++; return gain(M, p, false); }
@@ -1348,8 +1361,12 @@ function gain(M, p, keepPossTeam, silent) {
   if (M.dbg && f && f.from && f.from.team === T && f.from !== p) M.dbg['ok_' + f.type] = (M.dbg['ok_' + f.type] || 0) + 1;
   if (f && f.logIdx != null && f.from && f.from.team === T && f.from !== p) M.passLog[f.logIdx].ok = 1;
   if (f && f.from && f.from.team === T && f.from !== p && f.type !== 'throw') { T.st.passOk++; f.from.r.passOk++; }
-  b.owner = p; b.held = false; b.flight = null; b.vx = b.vy = b.vz = 0; b.spin = 0; b.last = p; p.gainT = M.t;
-  p.decT = (.35 + M.rng() * .5 * (1.4 - tac(T).tempo * .2)) * (iv(p, 'tempo') > 0 ? .75 : iv(p, 'tempo') < 0 ? 1.3 : 1); p.dribbling = false;
+  const spIn = hyp(b.vx, b.vy); const zIn = b.z;
+  b.owner = p; b.held = false; b.flight = null; b.vx = b.vy = b.vz = 0; b.spin = 0; b.last = p; p.gainT = M.t; p.aim = null; p.aimN = 0;
+  // 퍼스트 터치: 공이 빠르거나 떠 있을수록, 볼 컨트롤이 낮을수록 공을 잡아 두는 데 시간이 걸림. 그 뒤에 판단 시간이 붙음
+  const ctlT = clamp(.14 + spIn * .024 + (zIn > .5 ? .18 : 0) + (92 - E(p, 'ballControl')) * .007, .22, 1.0) * (p.tf.one2 || p.tf.qr ? .75 : 1);
+  const think = (.14 + M.rng() * .45 * (1.45 - tac(T).tempo * .2)) * (iv(p, 'tempo') > 0 ? .75 : iv(p, 'tempo') < 0 ? 1.3 : 1);
+  p.decT = (ctlT + think) * (1 - .22 * pressureOn(M, p)); p.dribbling = false;
   if (prevTeam && prevTeam !== T) { T.winT = M.t; T.winX = fwd(T, b.x); prevTeam.lossT = M.t; M.assist = null; }
   else if (f && f.from && f.from.team === T && f.from !== p) M.assist = { p: f.from, t: M.t, kind: f.type };
 }

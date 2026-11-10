@@ -26,14 +26,14 @@ const dbLoad = (async () => {
 })();
 const S = {
   screen: 'm_home', home: 'ARS', away: 'LIV', control: 'home', setups: LS.get('draftxi.setups.v1') || {},
-  speed: 8, view: '3d', cam: 'broadcast', cam2d: 'full', names: 'carrier', autoReplay: true,
+  speed: 2, view: '3d', cam: 'broadcast', cam2d: 'full', names: 'carrier', autoReplay: true,
   hl: 'ext', hlGap: 32, panels: null, pitchAlways: false, hlSpeed: 1, fastDead: true, model: 'human', mode: null, homeAdv: true, cur: 'KRW',
   uiAccent: '#f2c14e', uiBg: 'graphite', ballSize: 1, pitchTheme: 'classic', pitchColor: '#2f7a3f', pitchPattern: 'stripes', zoom: 1,
   tacSide: 0, tacTab: 'lineup', selSlot: null, pendingSub: null, swapA: null, tacTeam: null,
   dbLeague: null, dbTeam: null, dbPlayer: null, sideTab: 'feed', lgTab: 'table'
 };
-const prefs = LS.get('draftxi.prefs.v1'); if (prefs) Object.assign(S, prefs); S.mode = 'virtual';
-const savePrefs = () => LS.set('draftxi.prefs.v1', { home: S.home, away: S.away, control: S.control, speed: S.speed, view: S.view, cam: S.cam, cam2d: S.cam2d, names: S.names, autoReplay: S.autoReplay, hl: S.hl, hlGap: S.hlGap, hlSpeed: S.hlSpeed, fastDead: S.fastDead, model: S.model, mode: S.mode, homeAdv: S.homeAdv, cur: S.cur, uiAccent: S.uiAccent, uiBg: S.uiBg, pitchTheme: S.pitchTheme, pitchColor: S.pitchColor, pitchPattern: S.pitchPattern, zoom: S.zoom, ballSize: S.ballSize, panels: S.panels, pitchAlways: S.pitchAlways });
+const prefs = LS.get('draftxi.prefs.v1'); if (prefs) Object.assign(S, prefs); if (prefs && !prefs.v3 && S.speed > 2) S.speed = 2; S.mode = 'virtual';
+const savePrefs = () => LS.set('draftxi.prefs.v1', { home: S.home, away: S.away, control: S.control, speed: S.speed, view: S.view, cam: S.cam, cam2d: S.cam2d, names: S.names, autoReplay: S.autoReplay, hl: S.hl, hlGap: S.hlGap, hlSpeed: S.hlSpeed, fastDead: S.fastDead, model: S.model, mode: S.mode, homeAdv: S.homeAdv, cur: S.cur, uiAccent: S.uiAccent, uiBg: S.uiBg, pitchTheme: S.pitchTheme, pitchColor: S.pitchColor, pitchPattern: S.pitchPattern, zoom: S.zoom, ballSize: S.ballSize, panels: S.panels, pitchAlways: S.pitchAlways, auto2d: S.auto2d, v3: 1 });
 // ---------- 색상 (UI·경기장) ----------
 const UI_BG = {
   graphite: ['기본(그래파이트)', { '--bg': '#0b0d11', '--panel': '#13161c', '--panel2': '#1a1e26', '--line': '#2a303b', '--line2': '#39414f' }],
@@ -1435,7 +1435,10 @@ function modelState(st) {
   if (st === 'loading' && S.view === '3d') toast('사람 모델을 불러오는 중입니다…');
   if (st === 'failed') { S.model = 'simple'; toast('사람 모델을 불러오지 못해 단순 모델로 표시합니다.'); buildCtrl(); }
 }
-function applyViewVisibility() { const c3 = $('#c3'), c2 = $('#c2'); if (!c3) return; c3.hidden = S.view !== '3d' || !R3; c2.hidden = !(S.view !== '3d' || !R3); $('#labels').innerHTML = ''; }
+// 3D를 골랐어도 빨리 감는 동안(하이라이트 사이, 풀 경기 4배속 이상)은 2D로 보여 주고, 정배속 장면과 리플레이에서만 3D로 전환
+function fastNow() { if (!M || L.replay) return false; if (curHl() === 'full') return S.speed > 2 && !matchDone(); return !inWindow(L.ph) && !matchDone(); }
+function effView() { return S.view === '3d' && R3 && !(S.auto2d !== false && fastNow()) ? '3d' : '2d'; }
+function applyViewVisibility() { const c3 = $('#c3'), c2 = $('#c2'); if (!c3) return; const v = effView(); L.ev = v; c3.hidden = v !== '3d'; c2.hidden = v === '3d'; $('#labels').innerHTML = ''; }
 function resizeView() { if (R3 && $('#c3') && !$('#c3').hidden) R3.resize(); if (R2) R2.resize(); }
 window.addEventListener('resize', () => { if (S.screen === 'match') resizeView(); });
 function clockOf(F) {
@@ -1465,6 +1468,7 @@ function buildCtrl() {
       h('div', { class: 'row' }, h('span', { class: 'lbl' }, '화면'), seg([['3d', '3D'], ['2d', '2D']], S.view, v => { S.view = v; savePrefs(); applyViewVisibility(); resizeView(); buildCtrl(); }), camControls()),
       S.view === '3d' && R3 ? h('div', { class: 'row' }, h('span', { class: 'lbl' }, '선수 모델'), sel([['human', '사람 모델'], ['simple', '단순 모델']], S.model, v => { S.model = v; savePrefs(); R3.setModel(v, modelState); }, 'model')) : null,
       h('div', { class: 'row' }, h('span', { class: 'lbl' }, '이름'), sel([['none', '이름 숨김'], ['carrier', '볼 보유자 이름'], ['all', '모든 이름']], S.names, v => { S.names = v; savePrefs(); $('#labels').innerHTML = ''; }, 'names')),
+      S.view === '3d' && R3 ? h('label', { class: 'row', style: { gap: '6px' } }, h('input', { type: 'checkbox', checked: S.auto2d !== false || null, onchange: e => { S.auto2d = e.target.checked; savePrefs(); } }), '빨리 감는 동안은 2D로 보기 (주요 장면·리플레이만 3D)') : null,
       h('label', { class: 'row', style: { gap: '6px' } }, h('input', { type: 'checkbox', checked: !!S.pitchAlways || null, onchange: e => { S.pitchAlways = e.target.checked; savePrefs(); } }), '하이라이트 사이에도 경기장 표시'),
       h('div', { class: 'row' }, h('button', { class: 'btn sm', onclick: toggleFullscreen }, isFs() ? '전체화면 끄기' : '전체화면'),
         isFs() ? h('button', { class: 'btn sm', onclick: () => { S.fsSide = !S.fsSide; $('.match').classList.toggle('noside', !S.fsSide); resizeView(); buildCtrl(); } }, S.fsSide ? '옆 패널 숨기기' : '옆 패널 보기') : null),
@@ -1550,7 +1554,8 @@ function drawFrame(F, dt) {
   const attackDir = cp ? cp.team.dir * (F.half === M.half ? 1 : -1) : 1;
   const rate = L.replay ? (L.replay.playing ? L.replay.speed : 0) : (L.playing && !L.modal && !matchDone() ? Math.min(4, playRate(L.ph)) : 0);
   const opt = { selected: S.selPid, carrier, names: S.names, cam2d: S.cam2d, attackDir, rate, pitch: L.pitch, zoom: S.zoom, wx: M && M.wx };
-  if (S.view === '3d' && R3) { R3.draw(F, pinfo, opt, dt); drawLabels(F, opt); }
+  if (effView() !== L.ev) { applyViewVisibility(); resizeView(); }
+  if (L.ev === '3d') { R3.draw(F, pinfo, opt, dt); drawLabels(F, opt); }
   else if (R2) R2.draw(F, pinfo, opt);
   const bn = $('#banner'); if (bn) { if (L.banner && L.banner.t > 0) { L.banner.t -= dt; bn.innerHTML = ''; bn.append(L.banner.text, h('small', null, L.banner.sub)); bn.style.opacity = Math.min(1, L.banner.t * 2); } else bn.textContent = ''; }
   const fr = L.replay ? L.replay.r : L.ph;
