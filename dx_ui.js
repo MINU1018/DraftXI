@@ -26,7 +26,7 @@ const posTag = pos => h('span', { class: 'dx-pos ' + (GRPCOL[C.GRP(pos)] || 'mf'
 const ovrB = (o, big) => h('span', { class: 'dx-ovr ' + (o >= 85 ? 'o5' : o >= 80 ? 'o4' : o >= 74 ? 'o3' : o >= 67 ? 'o2' : 'o1') + (big ? ' big' : '') }, o);
 const flag = code => FLAG[code] ? h('img', { class: 'dx-flag', src: FLAG[code], alt: '', loading: 'lazy' }) : h('span', { class: 'dx-flag none' });
 const crest = (id, cls) => LOGO[id] ? h('img', { class: 'dx-crest ' + (cls || ''), src: LOGO[id], alt: '', loading: 'lazy' }) : null;
-function badge(team, cls) { return h('span', { class: 'dx-badge ' + (cls || ''), style: { background: `linear-gradient(135deg, ${team.color1} 0 58%, ${team.color2} 58% 100%)`, color: ink(team.color1) } }, h('span', null, team.short)); }
+function badge(team, cls) { if (team.club && LOGO[team.club]) return h('span', { class: 'dx-badge img ' + (cls || '') }, h('img', { src: LOGO[team.club], alt: '' })); return h('span', { class: 'dx-badge ' + (cls || ''), style: { background: `linear-gradient(135deg, ${team.color1} 0 58%, ${team.color2} 58% 100%)`, color: ink(team.color1) } }, h('span', null, team.short)); }
 const rtCls = v => v >= 8 ? 'r9' : v >= 7 ? 'r7' : v >= 6 ? 'r6' : v > 0 ? 'r5' : 'r0';
 const rt = v => h('span', { class: 'dx-rt ' + rtCls(v || 0) }, v ? v.toFixed(1) : '-');
 function faces(p) {
@@ -97,22 +97,38 @@ function viewNew() {
   w.append(panel('2 · 선수 풀', null, ...body2));
   // 3. 드래프트
   w.append(panel('3 · 드래프트', null, optCards(Object.entries(C.DRAFT_MODES), cfg.draftMode, k => { cfg.draftMode = k; rr(); }),
+    cfg.draftMode === 'shuffle' ? line('세트 구성', seg([['tier', '비슷한 능력치끼리'], ['random', '완전 무작위']], cfg.setMode, v => { cfg.setMode = v; rr(); }), cfg.setMode === 'tier' ? '한 세트 안의 선수는 능력치 차이가 4 이내입니다. 높은 세트와 낮은 세트가 모든 감독에게 차례로 돌아갑니다.' : '세트마다 풀 전체 범위의 선수가 섞여 나옵니다.') : cfg.draftMode === 'snake' ? h('p', { class: 'hint' }, '스네이크는 풀 전체가 공개되므로, 선수 간 격차는 위 2번의 능력치 범위로 조절합니다.') : null,
     line('스쿼드 크기', seg([14, 16, 18, 20].map(n => [n, `${n}명`]), cfg.squad, v => { cfg.squad = v; rr(); }), cfg.squad <= 14 ? '선발 11 + 교체 3. 포지션 공백이 없도록 신중히.' : '교체 선수는 경기당 최대 9명까지 벤치에 앉습니다.'),
     line('지명 제한 시간', seg([[0, '없음'], [30, '30초'], [60, '60초'], [90, '90초']], cfg.timer, v => { cfg.timer = v; rr(); }), '시간이 지나면 가장 알맞은 선수가 자동 지명됩니다.'),
     line('재드래프트', seg([0, 1, 2, 3, 5].map(n => [n, n ? `${n}회` : '없음']), cfg.redrafts, v => { cfg.redrafts = v; rr(); }), `라운드 사이에 한 번에 최대 ${cfg.redraftMax}명까지 자유 계약 선수와 교체합니다.`),
     line('AI 감독 지명 수준', seg([[0, '느슨하게'], [1, '보통'], [2, '날카롭게']], cfg.ai, v => { cfg.ai = v; rr(); }))));
-  // 4. 내 팀
+  // 4. 팀
   const me = cfg.me; const txt = (v, on, ph, mx, wd) => h('input', { type: 'text', value: v, placeholder: ph, maxlength: mx, style: { width: wd || '220px' }, oninput: e => on(e.target.value) });
-  w.append(panel('4 · 내 팀', null,
-    h('div', { class: 'dx-me' }, badge({ short: (me.short || 'MY').toUpperCase().slice(0, 4), color1: me.color1, color2: me.color2 }, 'xl'),
-      h('div', { class: 'stack', style: { flex: 1, minWidth: '260px' } },
-        line('팀 이름', txt(me.name, v => me.name = v, '팀 이름', 24)), line('약칭', txt(me.short, v => me.short = v, 'MY', 4, '90px'), '전광판에 표시 (영문 2~4자)'), line('감독 이름', txt(me.mgr, v => me.mgr = v, '감독', 20)),
-        line('유니폼 색', h('div', { class: 'row' }, h('input', { type: 'color', value: me.color1, onchange: e => { me.color1 = e.target.value; rr(); } }), h('input', { type: 'color', value: me.color2, onchange: e => { me.color2 = e.target.value; rr(); } }))),
-        line('기본 포메이션', sel(Object.keys(E.FORMATIONS).map(f => [f, f]), me.formation, v => { me.formation = v; rr(); }, 'dx_form'), '자동 지명과 5지선다의 자리 순서 기준입니다. 드래프트 후 전술 화면에서 자유롭게 바꿀 수 있습니다.'),
-        line('대회 이름', txt(cfg.name, v => cfg.name = v, `${F.n} ${cfg.n}팀`, 30)),
-        line('출전 정지', seg([[true, '적용'], [false, '없음']], cfg.susp, v => { cfg.susp = v; rr(); }), '퇴장 1경기, 경고 3장 누적 1경기')))));
+  if (U.meReal == null) U.meReal = true;
+  const real = cfg.teamMode === 'real'; const CI = C.clubIndex(TL.db); const cById = id => CI.find(c => c.id === id); const allLg = TL.db.leagues.map(l => [l.id, l.name]);
+  const fitIds = new Set(C.clubsFor(TL.db, cfg).map(c => c.id));
+  const clubPick = (key, onPick, exclude, cur) => { const curC = cur && cById(cur); const lg = U[key] || (curC && curC.lg) || (pc.leagues && pc.leagues[0]) || 'ENG1'; const cl = CI.filter(c => c.lg === lg && !(exclude && exclude.has(c.id))).sort((a, b) => b.str - a.str);
+    return h('div', { class: 'row' }, sel(allLg, lg, v => { U[key] = v; rr(); }, 'dx_' + key), sel([['', '구단 선택']].concat(cl.map(c => [c.id, `${c.name} · ${c.str}${fitIds.has(c.id) ? '' : ' (범위 밖)'}`])), curC && curC.lg === lg ? cur : '', v => { if (v) onPick(v); }, 'dx_' + key + 'c')); };
+  const mc = real && me.club ? cById(me.club) : null; if (real && me.club && !mc) me.club = null;
+  const teamBody = [line('팀 방식', seg([['real', '실제 구단'], ['virtual', '가상 구단']], cfg.teamMode, v => { cfg.teamMode = v; rr(); }), real ? '구단의 이름·색·엠블럼만 빌려 옵니다. 선수단은 드래프트로 새로 꾸립니다.' : '모든 팀이 가상의 이름과 색을 씁니다.')];
+  if (real) teamBody.push(line('내 팀', seg([[true, '실제 구단 고르기'], [false, '직접 만들기']], !!me.club || !!U.meReal, v => { U.meReal = v; if (!v) me.club = null; rr(); })));
+  if (real && (me.club || U.meReal)) teamBody.push(h('div', { class: 'dx-me' }, mc ? badge({ club: mc.id, short: mc.short, color1: mc.color1, color2: mc.color2 }, 'xl') : h('span', { class: 'dx-badge xl', style: { background: 'var(--panel3)' } }),
+    h('div', { class: 'stack', style: { flex: 1, minWidth: '260px' } }, line('구단', clubPick('meLg', v => { me.club = v; rr(); }, null, me.club), mc ? `${mc.name} · ${mc.lgName} · 실제 전력 ${mc.str}` : '리그를 고른 뒤 구단을 선택하세요.'))));
+  else teamBody.push(h('div', { class: 'dx-me' }, badge({ short: (me.short || 'MY').toUpperCase().slice(0, 4), color1: me.color1, color2: me.color2 }, 'xl'),
+    h('div', { class: 'stack', style: { flex: 1, minWidth: '260px' } },
+      line('팀 이름', txt(me.name, v => me.name = v, '팀 이름', 24)), line('약칭', txt(me.short, v => me.short = v, 'MY', 4, '90px'), '전광판에 표시 (영문 2~4자)'),
+      line('유니폼 색', h('div', { class: 'row' }, h('input', { type: 'color', value: me.color1, onchange: e => { me.color1 = e.target.value; rr(); } }), h('input', { type: 'color', value: me.color2, onchange: e => { me.color2 = e.target.value; rr(); } }))))));
+  if (real) { const need = cfg.n - 1; cfg.aiClubs = (cfg.aiClubs || []).filter(id => cById(id) && id !== me.club).slice(0, need); const ex = new Set(cfg.aiClubs.concat(me.club ? [me.club] : []));
+    teamBody.push(line('상대 팀', seg([['auto', '자동 선택'], ['manual', '직접 지정']], cfg.aiPick, v => { cfg.aiPick = v; rr(); }), cfg.aiPick === 'auto' ? `능력치 범위(${pc.ovrMin}–${pc.ovrMax})에 맞는 실제 전력의 구단 ${fitIds.size}곳 중에서 무작위로 ${need}팀을 뽑습니다${pc.leagues ? ' (선택한 리그 안에서)' : ''}.` : `${cfg.aiClubs.length} / ${need}팀 지정 · 남는 자리는 자동으로 채워집니다.`));
+    if (cfg.aiPick === 'manual') teamBody.push(line('구단 추가', cfg.aiClubs.length < need ? clubPick('aiLg', v => { cfg.aiClubs.push(v); rr(); }, ex) : h('span', { class: 'hint' }, '모든 자리를 지정했습니다.')),
+      h('div', { class: 'dx-chips' }, ...cfg.aiClubs.map(id => { const c = cById(id); return h('button', { class: 'dx-chipbtn on', title: '눌러서 빼기', onclick: () => { cfg.aiClubs = cfg.aiClubs.filter(x => x !== id); rr(); } }, `${c.name} ${c.str} ✕`); }), cfg.aiClubs.length ? h('button', { class: 'dx-chipbtn', onclick: () => { cfg.aiClubs = []; rr(); } }, '모두 지우기') : null)); }
+  teamBody.push(line('감독 이름', txt(me.mgr, v => me.mgr = v, '감독', 20)),
+    line('기본 포메이션', sel(Object.keys(E.FORMATIONS).map(f => [f, f]), me.formation, v => { me.formation = v; rr(); }, 'dx_form'), '자동 지명과 5지선다의 자리 순서 기준입니다. 드래프트 후 전술 화면에서 자유롭게 바꿀 수 있습니다.'),
+    line('대회 이름', txt(cfg.name, v => cfg.name = v, `${F.n} ${cfg.n}팀`, 30)),
+    line('출전 정지', seg([[true, '적용'], [false, '없음']], cfg.susp, v => { cfg.susp = v; rr(); }), '퇴장 1경기, 경고 3장 누적 1경기'));
+  w.append(panel('4 · 팀', null, ...teamBody));
   w.append(h('div', { class: 'dx-foot' }, T() ? h('span', { class: 'hint bad' }, '진행 중인 대회가 있습니다. 새로 시작하면 지금 대회는 사라집니다.') : h('span'), h('div', { class: 'row' }, T() ? h('button', { class: 'btn', onclick: () => TL.go('m_home') }, '취소') : null,
-    h('button', { class: 'btn primary lg', onclick: () => { const go = () => startNew(cfg); if (T() && T().phase !== 'done') confirmBox('진행 중인 대회를 버리고 새 대회를 시작할까요?', go, '새 대회 시작'); else go(); } }, '드래프트 시작'))));
+    h('button', { class: 'btn primary lg', onclick: () => { if (cfg.teamMode === 'real' && U.meReal && !cfg.me.club) return toast('내 구단을 선택하거나 \'직접 만들기\'로 바꿔 주세요.'); const go = () => startNew(cfg); if (T() && T().phase !== 'done') confirmBox('진행 중인 대회를 버리고 새 대회를 시작할까요?', go, '새 대회 시작'); else go(); } }, '드래프트 시작'))));
   return w;
 }
 function startNew(cfg) {
@@ -209,7 +225,7 @@ function viewDraft() {
       pages > 1 ? h('div', { class: 'row dx-pager' }, h('button', { class: 'btn sm', disabled: f.page === 0, onclick: () => { f.page--; TL.render(true); } }, '이전'), h('span', { class: 'dim num' }, `${f.page + 1} / ${pages}`), h('button', { class: 'btn sm', disabled: f.page >= pages - 1, onclick: () => { f.page++; TL.render(true); } }, '다음')) : null);
   } else {
     const ps = opts.map(id => t.players[id]).sort((a, b) => (d.bookmarks.includes(b.id) - d.bookmarks.includes(a.id)) || b.o - a.o);
-    const title = d.mode === 'fc' ? `${TL.posLabel(C.fcOffer(t, ME).code)} 후보 ${ps.length}명` : `세트 ${C.setIdx(t, ME) + 1} · ${ps.length}명 남음`;
+    const os = ps.map(p => p.o); const title = d.mode === 'fc' ? `${TL.posLabel(C.fcOffer(t, ME).code)} 후보 ${ps.length}명` : `세트 ${C.setIdx(t, ME) + 1} · 능력치 ${Math.min(...os)}–${Math.max(...os)} · ${ps.length}명 남음`;
     mid = panel(title, d.mode === 'shuffle' ? h('span', { class: 'hint' }, `지명 후 세트는 ${t.mgrs[(ME + 1) % cfg.n].team.short}에게 넘어가고, ${t.mgrs[(ME - 1 + cfg.n) % cfg.n].team.short}의 세트를 받습니다.`) : null,
       h('div', { class: 'dx-cards' + (d.mode === 'fc' ? ' five' : '') }, ...ps.map(p => pcard(p, { pick: userPick, need: needOf(p), flash: true }))));
   }

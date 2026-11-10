@@ -30,9 +30,9 @@ const POOL_PRESETS = [
   ['low', '하부 리그', { ovrMin: 60, ovrMax: 70 }], ['wide', '전 범위', { ovrMin: 62, ovrMax: 99 }], ['kids', '유망주 (U21)', { ovrMin: 60, ovrMax: 99, ageMin: 15, ageMax: 21 }], ['vets', '베테랑 (32+)', { ovrMin: 68, ovrMax: 99, ageMin: 32, ageMax: 45 }]
 ];
 const DEFAULT_CFG = () => ({
-  name: '', format: 'league', n: 8, legs: 2, k: 6, q: 4, squad: 18, draftMode: 'shuffle', redrafts: 2, redraftMax: 3, timer: 0, susp: true, ai: 1,
+  name: '', teamMode: 'real', aiPick: 'auto', aiClubs: [], setMode: 'tier', format: 'league', n: 8, legs: 2, k: 6, q: 4, squad: 18, draftMode: 'shuffle', redrafts: 2, redraftMax: 3, timer: 0, susp: true, ai: 1,
   pool: { src: 'real', ovrMin: 76, ovrMax: 86, ageMin: 15, ageMax: 45, leagues: null, nats: null },
-  me: { name: '나의 팀', short: 'MY', color1: '#f2c14e', color2: '#0b0d11', mgr: '감독', formation: '4-3-3' }
+  me: { club: null, name: '나의 팀', short: 'MY', color1: '#f2c14e', color2: '#0b0d11', mgr: '감독', formation: '4-3-3' }
 });
 
 // ---------- AI 감독 ----------
@@ -53,15 +53,42 @@ function mgrName(r) {
   const langs = Object.keys(Wd.NAMES); const [F, L] = Wd.NAMES[r.pick(langs)];
   return r.pick(F) + ' ' + r.pick(L);
 }
-function makeManagers(T) {
-  const cfg = T.cfg, r = sub(T, 'mgrs'); const out = [];
-  out.push({ id: 0, ctrl: 'user', uid: 'local', name: cfg.me.mgr || '감독', style: 'user', formation: cfg.me.formation || '4-3-3', team: { id: 'DX0', name: cfg.me.name || '나의 팀', short: (cfg.me.short || 'MY').toUpperCase().slice(0, 4), color1: cfg.me.color1, color2: cfg.me.color2 } });
+// 실제 구단 색인: 선발 11명 평균 능력치(str)로 수준을 매김
+let clubCache = null, clubCacheDb = null;
+function clubIndex(db) {
+  if (clubCache && clubCacheDb === db) return clubCache;
+  const out = [];
+  for (const lg of db.leagues) for (const t of lg.teams) {
+    const os = t.players.map(p => D.calcOvr(p.stats, p.pos)).sort((a, b) => b - a).slice(0, 11); if (os.length < 11) continue;
+    out.push({ id: t.id, name: t.name, short: t.short, color1: t.color1, color2: t.color2, lg: lg.id, lgName: lg.name, other: !!lg.other, str: Math.round(os.reduce((a, b) => a + b, 0) / os.length * 10) / 10 });
+  }
+  clubCache = out; clubCacheDb = db; return out;
+}
+// 능력치 범위에 맞는 구단 (선수 풀 리그 제한도 반영). 모자라면 범위 중앙에 가까운 순으로 보충
+function clubsFor(db, cfg, n, exclude) {
+  const pc = cfg.pool, ex = exclude || new Set(); const all = clubIndex(db).filter(c => !ex.has(c.id) && !c.other);
+  const lgOk = c => !pc.leagues || !pc.leagues.length || pc.leagues.includes(c.lg); const mid = (pc.ovrMin + pc.ovrMax) / 2;
+  const fit = all.filter(c => lgOk(c) && c.str >= pc.ovrMin - 1.5 && c.str <= pc.ovrMax + 1.5);
+  if (n == null || fit.length >= n) return fit;
+  const ids = new Set(fit.map(c => c.id)); const rest = all.filter(c => !ids.has(c.id)).sort((a, b) => (lgOk(b) - lgOk(a)) || Math.abs(a.str - mid) - Math.abs(b.str - mid));
+  return fit.concat(rest.slice(0, n - fit.length));
+}
+function makeManagers(T, db) {
+  const cfg = T.cfg, r = sub(T, 'mgrs'); const out = []; const real = cfg.teamMode === 'real' && db; const CI = real ? clubIndex(db) : []; const byId = id => CI.find(c => c.id === id);
+  const fromClub = (c, i) => ({ id: 'DX' + i, name: c.name, short: c.short, color1: c.color1, color2: c.color2, club: c.id });
+  const mine = real && cfg.me.club ? byId(cfg.me.club) : null;
+  out.push({ id: 0, ctrl: 'user', uid: 'local', name: cfg.me.mgr || '감독', style: 'user', formation: cfg.me.formation || '4-3-3', team: mine ? fromClub(mine, 0) : { id: 'DX0', name: cfg.me.name || '나의 팀', short: (cfg.me.short || 'MY').toUpperCase().slice(0, 4), color1: cfg.me.color1, color2: cfg.me.color2 } });
   const names = r.shuffle(CLUB_A.slice()), kits = r.shuffle(KITS.slice()), styles = Object.keys(STYLES); const usedShort = new Set([out[0].team.short]);
+  let clubs = [];
+  if (real) { const used = new Set(mine ? [mine.id] : []); if (cfg.aiPick === 'manual') for (const id of cfg.aiClubs || []) { const c = byId(id); if (c && !used.has(id) && clubs.length < cfg.n - 1) { clubs.push(c); used.add(id); } }
+    const need = cfg.n - 1 - clubs.length; if (need > 0) { const cand = r.shuffle(clubsFor(db, cfg, need, used).slice()); clubs = clubs.concat(cand.slice(0, need)); } r.shuffle(clubs); }
   for (let i = 1; i < cfg.n; i++) {
-    const base = names[(i - 1) % names.length]; const sfx = r.pick(CLUB_B); const name = /^(FC|SC|AC|CF)$/.test(sfx) && r() < .5 ? sfx + ' ' + base : base + ' ' + sfx;
-    let short = base.replace(/[^A-Za-z]/g, '').slice(0, 3).toUpperCase(), k = 0; while (usedShort.has(short)) short = base.replace(/[^A-Za-z]/g, '').slice(0, 2).toUpperCase() + String.fromCharCode(65 + (k++ % 26)); usedShort.add(short);
-    const style = styles[r.int(styles.length)]; const kit = kits[(i - 1) % kits.length];
-    out.push({ id: i, ctrl: 'ai', uid: null, name: mgrName(r), style, formation: r.pick(STYLES[style].forms), team: { id: 'DX' + i, name, short, color1: kit[0], color2: kit[1] } });
+    const style = styles[r.int(styles.length)]; const c = clubs[i - 1]; let team;
+    if (c) { team = fromClub(c, i); let k = 0; const b0 = team.short; while (usedShort.has(team.short)) team.short = b0.slice(0, 2) + String.fromCharCode(65 + (k++ % 26)); usedShort.add(team.short); }
+    else { const base = names[(i - 1) % names.length]; const sfx = r.pick(CLUB_B); const name = /^(FC|SC|AC|CF)$/.test(sfx) && r() < .5 ? sfx + ' ' + base : base + ' ' + sfx;
+      let short = base.replace(/[^A-Za-z]/g, '').slice(0, 3).toUpperCase(), k = 0; while (usedShort.has(short)) short = base.replace(/[^A-Za-z]/g, '').slice(0, 2).toUpperCase() + String.fromCharCode(65 + (k++ % 26)); usedShort.add(short);
+      const kit = kits[(i - 1) % kits.length]; team = { id: 'DX' + i, name, short, color1: kit[0], color2: kit[1] }; }
+    out.push({ id: i, ctrl: 'ai', uid: null, name: mgrName(r), style, formation: r.pick(STYLES[style].forms), team });
   }
   return out;
 }
@@ -109,14 +136,26 @@ function buildPool(T, db) {
   if (pc.src !== 'virtual' && db) for (const x of realIndex(db)) if (realOk(x, pc) && by[x.p.pos]) by[x.p.pos].push(x);
   for (const pos in by) r.shuffle(by[pos]);
   const players = {}, used = new Set(); let vid = 0, short = 0, nReal = 0;
-  const take = pos => {
+  // lo~hi: 이 선수가 들어갈 능력치 구간 (세트 안 선수들의 수준을 맞추기 위함). 없으면 풀 전체 범위
+  const take = (pos, lo, hi) => {
+    const band = lo != null; if (!band) { lo = pc.ovrMin; hi = pc.ovrMax; }
     const wantReal = pc.src === 'real' || (pc.src === 'mixed' && r() < .5);
-    if (wantReal || pc.src === 'real') { let x; while ((x = by[pos].pop())) { if (!players[x.p.id]) { const c = cloneReal(x); players[c.id] = c; used.add(c.name); nReal++; return c.id; } } if (pc.src === 'real') short++; }
-    const lo = pc.ovrMin, hi = Math.min(pc.ovrMax, 94); const ovr = Math.round(lo + (hi - lo) * Math.pow(r(), 1.35));
-    const v = genVirtual(r, 'v' + (vid++), pos, ovr, Math.max(16, pc.ageMin), Math.min(38, pc.ageMax), used); players[v.id] = v; return v.id;
+    if (wantReal) { const L = by[pos]; let bi = -1, bd = 1e9; const c = (lo + hi) / 2;
+      for (let i = L.length - 1; i >= 0; i--) { const x = L[i]; if (players[x.p.id]) { L.splice(i, 1); continue; } if (x.o >= lo && x.o <= hi) { bi = i; bd = 0; break; } const d = Math.abs(x.o - c); if (d < bd) { bd = d; bi = i; } }
+      if (bi >= 0 && (bd === 0 || (pc.src === 'real' && bd <= (hi - lo) / 2 + 2.5))) { const x = L.splice(bi, 1)[0]; const cl = cloneReal(x); players[cl.id] = cl; used.add(cl.name); nReal++; return cl.id; }
+      if (pc.src === 'real') short++; }
+    const h2 = Math.min(hi, 97); const ovr = Math.round(band ? lo + (h2 - lo) * r() : lo + (h2 - lo) * Math.pow(r(), 1.35));
+    const v = genVirtual(r, 'v' + (vid++), pos, Math.max(lo, ovr), Math.max(16, pc.ageMin), Math.min(38, pc.ageMax), used); players[v.id] = v; return v.id;
   };
-  const mkSet = () => { const ids = []; for (const [q, n] of SET_QUOTA) for (let i = 0; i < n; i++) { const pos = q === 'FB?' ? r.pick(['LB', 'RB']) : q === 'AT?' ? r.pick(['AM', 'LW', 'RW', 'ST', 'CM']) : q; ids.push(take(pos)); } return r.shuffle(ids); };
-  const sets = []; for (let i = 0; i < nSets; i++) sets.push(mkSet());
+  // 세트별 능력치 구간: 폭 4(±2)짜리 구간을 풀 범위에 고르게 배치 → 한 세트 안에서는 비슷한 수준끼리 경쟁
+  const tier = cfg.setMode !== 'random' && cfg.draftMode === 'shuffle'; const span = pc.ovrMax - pc.ovrMin; const W2 = 2;
+  // 실존 선수가 섞이는 풀은 실제 분포(분위수)를 따라 구간을 잡아, 드문 최상위 구간에서 선수가 모자라지 않게 함
+  const allO = []; if (pc.src !== 'virtual') for (const pos in by) for (const x of by[pos]) allO.push(x.o); allO.sort((a, b) => a - b);
+  const bandOf = k => { if (!tier || span <= 2 * W2) return [null, null]; const f = nSets === 1 ? .5 : k / (nSets - 1);
+    let c = allO.length >= 60 ? allO[Math.min(allO.length - 1, Math.floor((.04 + .95 * f) * allO.length))] : pc.ovrMin + W2 + (span - 2 * W2) * f;
+    c = clamp(c, pc.ovrMin + W2, pc.ovrMax - W2); return [Math.round(c - W2), Math.round(c + W2)]; };
+  const mkSet = k => { const [lo, hi] = bandOf(k); const ids = []; for (const [q, n] of SET_QUOTA) for (let i = 0; i < n; i++) { const pos = q === 'FB?' ? r.pick(['LB', 'RB']) : q === 'AT?' ? r.pick(['AM', 'LW', 'RW', 'ST', 'CM']) : q; ids.push(lo == null ? take(pos) : take(pos, lo, hi)); } return r.shuffle(ids); };
+  const sets = []; for (let i = 0; i < nSets; i++) sets.push(mkSet(i)); r.shuffle(sets);
   const extra = []; const cyc = ['GK', 'CB', 'CB', 'LB', 'RB', 'DM', 'CM', 'CM', 'AM', 'LW', 'RW', 'ST']; for (let i = 0; i < nExtra; i++) extra.push(take(cyc[i % cyc.length]));
   return { players, sets, extra, short, nReal };
 }
@@ -449,7 +488,7 @@ function newTournament(cfg, db, seed) {
   if (cfg.format === 'swiss') { cfg.k = clamp(cfg.k, 2, cfg.n - 1); const qs = [2, 4, 8, 16].filter(q => q < cfg.n); cfg.q = qs.includes(cfg.q) ? cfg.q : qs[qs.length - 1]; }
   cfg.squad = clamp(cfg.squad, 14, 20); if (cfg.pool.ovrMin > cfg.pool.ovrMax) [cfg.pool.ovrMin, cfg.pool.ovrMax] = [cfg.pool.ovrMax, cfg.pool.ovrMin];
   const T = { v: 1, id: 't' + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36), seed: seed || ((Math.random() * 2 ** 31) | 0), created: Date.now(), cfg, name: cfg.name || `${F.n} ${cfg.n}팀`, phase: 'draft', setups: {}, news: [], fx: [], days: [], day: 0 };
-  T.mgrs = makeManagers(T);
+  T.mgrs = makeManagers(T, db);
   const pool = buildPool(T, db); T.poolInfo = { short: pool.short, real: pool.nReal, total: Object.keys(pool.players).length };
   draftInit(T, pool);
   return T;
@@ -462,5 +501,5 @@ function archiveOf(T) {
   return { id: T.id, name: T.name, format: T.cfg.format, n: T.cfg.n, draftMode: T.cfg.draftMode, ended: T.ended || Date.now(), champion: T.mgrs[T.champion].team.name, champMine: T.champion === me, myTeam: T.mgrs[me].team.name, place, rec: [w, d, l], scorer: nm(aw.scorer), assist: nm(aw.assist), mvp: nm(aw.mvp) };
 }
 
-G.DXC = { FORMATS, DRAFT_MODES, POOL_PRESETS, DEFAULT_CFG, STYLES, GL, KO_NAME, GRP, SLOT_G, rngOf, realIndex, leaguesOf, poolPreview, buildPool, newTournament, makeManagers, teamOf, teamFromIds, assignNumbers, xiValue, bestRole, aiSetup, repairSetup, userSetup, matchSetup, teamRating, draftInit, draftOptions, draftPick, draftAdvance, draftAuto, draftGrades, needs, fcOffer, fcCode, fcSeq, snakeWho, setIdx, canRedraft, redraft, aiRedraft, compInit, standings, tableOf, qualLine, dayStarted, dayDone, nextFixtureOf, winnerOf, advance, alive, suspendedSet, fxSeed, buildJob, applyResult, resolveKO, resultText, fullSummary, stats, bestXI, awards, archiveOf, news };
+G.DXC = { clubIndex, clubsFor, FORMATS, DRAFT_MODES, POOL_PRESETS, DEFAULT_CFG, STYLES, GL, KO_NAME, GRP, SLOT_G, rngOf, realIndex, leaguesOf, poolPreview, buildPool, newTournament, makeManagers, teamOf, teamFromIds, assignNumbers, xiValue, bestRole, aiSetup, repairSetup, userSetup, matchSetup, teamRating, draftInit, draftOptions, draftPick, draftAdvance, draftAuto, draftGrades, needs, fcOffer, fcCode, fcSeq, snakeWho, setIdx, canRedraft, redraft, aiRedraft, compInit, standings, tableOf, qualLine, dayStarted, dayDone, nextFixtureOf, winnerOf, advance, alive, suspendedSet, fxSeed, buildJob, applyResult, resolveKO, resultText, fullSummary, stats, bestXI, awards, archiveOf, news };
 })(typeof window !== 'undefined' ? window : globalThis);

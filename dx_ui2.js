@@ -243,7 +243,9 @@ function viewTactics() {
   const t = T(); if (!t || t.phase === 'draft') return viewHub(); const team = C.teamOf(t, ME); const setup = C.userSetup(t, ME); const f = t.phase === 'play' ? C.nextFixtureOf(t, ME) : null; const om = f ? (f.h === ME ? f.a : f.h) : null;
   const w = h('div', { class: 'wrap stack' });
   w.append(h('div', { class: 'dx-title' }, h('div', { class: 'row' }, badge(team, 'xl'), h('div', null, h('div', { class: 'lbl' }, om != null ? `다음 상대: ${tm(om).name} (${C.STYLES[t.mgrs[om].style].n} · ${t.mgrs[om].formation})` : '전술'), h('h1', null, '전술 · 선발 · 세트피스'))), TL.M && !TL.M.ended ? h('span', { class: 'hint' }, '진행 중인 경기의 전술은 경기 화면의 전술·교체 버튼에서 바꿉니다.') : null));
-  const presets = { get: () => { try { return (JSON.parse(localStorage.getItem('draftxi.tacpresets.v1') || '{}'))[t.id] || []; } catch (e) { return []; } }, set: l => { let all = {}; try { all = JSON.parse(localStorage.getItem('draftxi.tacpresets.v1') || '{}'); } catch (e) { } all = { [t.id]: l }; try { localStorage.setItem('draftxi.tacpresets.v1', JSON.stringify(all)); } catch (e) { } } };
+  // 저장한 전술은 대회와 상관없이 계속 남습니다 (선발 명단을 포함한 전술은 지금 명단에 없는 선수 자리를 자동으로 채움)
+  const PK = 'draftxi.tacpresets.v1'; const rd = () => { try { const o = JSON.parse(localStorage.getItem(PK) || '{}'); return Array.isArray(o.all) ? o.all : []; } catch (e) { return []; } };
+  const presets = { get: rd, set: l => { try { localStorage.setItem(PK, JSON.stringify({ all: l })); } catch (e) { toast('전술을 저장하지 못했습니다.'); } } };
   w.append(TL.tacticsPanel({ team, setup, oppTeam: om != null ? C.teamOf(t, om) : null, oppSetup: om != null ? C.aiSetup(t, om, C.suspendedSet(t, om)) : null, live: null, unavail: C.suspendedSet(t, ME), cond: null, presets, onChange: () => { t.mgrs[ME].formation = E.FORMATIONS[setup.formation] ? setup.formation : t.mgrs[ME].formation; persist(); TL.render(true); } }));
   return w;
 }

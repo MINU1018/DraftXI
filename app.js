@@ -663,7 +663,7 @@ function tacticsPanel(ctx) {
   return box;
 }
 // 전술 프리셋: 포메이션·위치·역할·개인 지침·팀 지침(세트피스 포함)을 이름 붙여 여러 개 저장
-const PRESET_MAX = 10;
+const PRESET_MAX = 30;
 const clone = o => JSON.parse(JSON.stringify(o));
 function presetOf(setup, withXI) {
   const o = { formation: setup.formation, slots: setup.slots ? clone(setup.slots) : null, roles: clone(setup.roles), instr: clone(setup.instr), tactics: clone(setup.tactics) };
@@ -701,7 +701,24 @@ function presetBar(ctx) {
     cur ? h('button', { class: 'btn sm', onclick: () => confirmBox(`'${cur.n}'을(를) 지금 전술로 덮어쓸까요?`, () => { cur.s = presetOf(ctx.setup, st.xi); cur.xi = st.xi; ctx.presets.set(list); toast('덮어썼습니다.'); ctx.onChange(); }, '덮어쓰기') }, '덮어쓰기') : null,
     cur ? h('button', { class: 'btn sm ghost', onclick: () => confirmBox(`'${cur.n}' 전술을 삭제할까요?`, () => { list.splice(st.sel, 1); ctx.presets.set(list); st.sel = 0; ctx.onChange(); }) }, '삭제') : null,
     h('span', { class: 'sep' }), name, h('label', { class: 'row', style: { gap: '4px' }, title: '선발·벤치·주장·키커까지 함께 저장' }, h('input', { type: 'checkbox', checked: st.xi || null, onchange: e => { st.xi = e.target.checked; } }), '선발 명단 포함'),
-    h('button', { class: 'btn sm', onclick: saveNew }, '지금 전술 저장'));
+    h('button', { class: 'btn sm', onclick: saveNew }, '지금 전술 저장'),
+    h('span', { class: 'sep' }),
+    h('button', { class: 'btn sm', title: '지금 전술과 저장된 전술 목록을 파일 하나로 내려받습니다', onclick: exportTac }, '파일로 내보내기'),
+    h('label', { class: 'btn sm', for: 'tacfile', title: '내보낸 전술 파일을 불러와 저장 목록에 더하고 바로 적용합니다' }, '파일 불러오기'),
+    h('input', { type: 'file', id: 'tacfile', accept: '.json,.txt', hidden: true, onchange: e => { const f = e.target.files[0]; if (f) f.text().then(importTac).catch(() => toast('파일을 읽지 못했습니다.')); } }));
+  function exportTac() {
+    const n = (name.value || '').trim() || '현재 전술'; const o = { app: 'draftxi', kind: 'tactics', v: 1, at: new Date().toISOString(), current: { n, xi: false, s: presetOf(ctx.setup, false) }, saved: list };
+    if (downloadText(JSON.stringify(o, null, 1), `draftxi-tactics-${n.replace(/[^0-9A-Za-z가-힣_-]+/g, '_')}.json`, 'application/json')) toast('전술 파일을 내려받았습니다.'); else toast('파일을 만들지 못했습니다.');
+  }
+  function importTac(txt) {
+    let o; try { o = JSON.parse(txt); } catch (e) { return toast('전술 파일 형식이 아닙니다.'); }
+    const okP = p => p && p.s && Array.isArray(p.s.roles) && p.s.roles.length === 11 && Array.isArray(p.s.instr) && p.s.instr.length === 11 && p.s.tactics && (E.FORMATIONS[p.s.formation] || (p.s.slots && p.s.slots.length === 11));
+    const items = [].concat(o && o.current ? [o.current] : [], (o && o.saved) || [], Array.isArray(o) ? o : []).filter(okP);
+    if (!items.length) return toast('불러올 전술이 없습니다. DRAFT XI에서 내보낸 파일인지 확인하세요.');
+    let added = 0, first = -1; for (const it of items) { if (list.length >= PRESET_MAX) break; if (list.some(x => x.n === it.n && JSON.stringify(x.s) === JSON.stringify(it.s))) continue; list.push({ n: String(it.n || '불러온 전술').slice(0, 24), xi: !!it.xi, s: it.s }); if (first < 0) first = list.length - 1; added++; }
+    ctx.presets.set(list); applyPreset(ctx, items[0].s); if (first >= 0) st.sel = first;
+    toast(`전술 ${added}개를 저장 목록에 더하고 '${items[0].n || '불러온 전술'}'을(를) 적용했습니다.`); ctx.onChange();
+  }
 }
 // 상대 선수 지시: 밀착 마크 · 압박 · 태클 강도 · 약한 발로 유도
 const OI_F = [['mark', '밀착 마크', [[0, '기본'], [1, '밀착']]], ['press', '압박', [[-1, '자제'], [0, '기본'], [1, '항상']]], ['tackle', '태클', [[-1, '부드럽게'], [0, '기본'], [1, '거칠게']]], ['foot', '약한 발로 유도', [[0, '기본'], [1, '유도']]]];
