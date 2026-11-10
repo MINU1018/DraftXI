@@ -35,16 +35,48 @@ const DEFAULT_CFG = () => ({
   me: { club: null, name: '나의 팀', short: 'MY', color1: '#f2c14e', color2: '#0b0d11', mgr: '감독', formation: '4-3-3' }
 });
 
-// ---------- AI 감독 ----------
+// ---------- 전술 스타일 · 성향 ----------
+// 스타일: 팀 지침의 기본값 묶음(일반형 성향 기준). 적용한 뒤 각 지침을 자유롭게 바꿀 수 있음
+// forms·w는 AI 감독이 이 스타일을 쓸 때의 선호 포메이션과 드래프트 가중치
 const STYLES = {
-  poss: { n: '점유형', forms: ['4-3-3', '4-2-3-1'], tac: { passing: 0, tempo: 1, width: 2, press: 2, defLine: 3, engage: 3, buildUp: true, finalThird: 'workIn' }, w: { shortPass: 1, vision: 1, ballControl: 1 } },
-  counter: { n: '역습형', forms: ['4-4-2', '4-2-3-1', '5-3-2'], tac: { passing: 2, tempo: 3, defLine: 1, engage: 1, press: 1, onWin: 'counter', onLoss: 'regroup' }, w: { pace: 1.2, accel: .8, finishing: .5 } },
-  press: { n: '압박형', forms: ['4-3-3', '4-1-2-1-2', '3-4-3'], tac: { press: 3, engage: 4, defLine: 3, tempo: 3, onLoss: 'counterpress', tackling: 'getStuckIn' }, w: { stamina: 1.2, aggression: .6, accel: .6 } },
-  direct: { n: '직선형', forms: ['4-4-2', '3-5-2', '4-5-1'], tac: { passing: 3, tempo: 3, buildUp: false, cross: 'high', width: 2, gkMethod: 'kick', gkTarget: 'target' }, w: { strength: 1, heading: 1, jumping: .6 } },
-  block: { n: '수비형', forms: ['5-3-2', '4-5-1', '4-1-2-1-2'], tac: { defLine: 0, engage: 1, press: 0, tempo: 1, onLoss: 'regroup', onWin: 'counter', tackling: 'stayOnFeet' }, w: { marking: 1, standTackle: 1, interceptions: 1 } },
-  wing: { n: '측면 공략형', forms: ['4-4-2', '4-3-3', '3-4-3'], tac: { width: 3, cross: 'whipped', tempo: 2, passing: 1 }, w: { crossing: 1.2, pace: .8, heading: .4 } },
-  bal: { n: '균형형', forms: ['4-3-3', '4-2-3-1', '4-4-2', '3-5-2'], tac: {}, w: {} }
+  control: { n: '점유율 위주', en: 'Control Possession', d: '공을 안전하게 소유하며 인내심을 갖고 빈틈을 노립니다.', ment: 1, forms: ['4-3-3', '4-2-3-1'], tac: { passing: 0, tempo: 1, width: 2, buildUp: true, finalThird: 'workIn', creative: 'normal', press: 2, defLine: 3, engage: 3, onLoss: 'counterpress', onWin: 'holdShape', gkMethod: 'roll', gkTarget: 'cb', gkTempo: 'slow' }, w: { shortPass: 1, vision: 1, ballControl: 1 } },
+  tiki: { n: '티키타카', en: 'Tiki-Taka', d: '극단적으로 짧은 패스와 빠른 순환으로 상대를 질식시킵니다.', ment: 1, forms: ['4-3-3', '4-1-2-1-2'], tac: { passing: 0, tempo: 3, width: 0, buildUp: true, finalThird: 'workIn', creative: 'express', press: 3, defLine: 3, engage: 3, onLoss: 'counterpress', onWin: 'holdShape', gkMethod: 'roll', gkTarget: 'cb', gkTempo: 'normal' }, w: { shortPass: 1.2, ballControl: 1, agility: .6, vision: .8 } },
+  vtiki: { n: '수직적 티키타카', en: 'Vertical Tiki-Taka', d: '짧은 패스 연계를 유지하되 전방 침투와 빠른 전진을 강조합니다.', ment: 1, forms: ['4-2-3-1', '4-1-2-1-2', '3-5-2'], tac: { passing: 1, tempo: 3, width: 0, focus: 'center', buildUp: true, finalThird: 'workIn', creative: 'express', press: 2, defLine: 3, engage: 3, onLoss: 'counterpress', onWin: 'counter', gkMethod: 'roll', gkTarget: 'cb', gkTempo: 'fast' }, w: { shortPass: 1, vision: 1, accel: .6, finishing: .4 } },
+  gegen: { n: '게겐프레스', en: 'Gegenpress', d: '공을 빼앗기자마자 전방에서 강하게 재압박해 높은 위치에서 되찾습니다.', ment: 1, forms: ['4-3-3', '4-2-3-1', '3-4-3'], tac: { passing: 1, tempo: 4, width: 1, buildUp: true, finalThird: 'mixed', press: 3, defLine: 4, engage: 4, onLoss: 'counterpress', onWin: 'counter', tackling: 'getStuckIn', gkTempo: 'fast' }, w: { stamina: 1.2, aggression: .6, accel: .6 } },
+  fluid: { n: '유동적 역습', en: 'Fluid Counter-Attack', d: '블록을 내려 상대를 끌어들인 뒤 여러 선수가 유기적으로 역습에 가담합니다.', ment: 0, forms: ['4-2-3-1', '4-3-3', '4-4-2'], tac: { passing: 1, tempo: 3, width: 2, buildUp: true, finalThird: 'mixed', creative: 'express', press: 1, defLine: 1, engage: 1, onLoss: 'regroup', onWin: 'counter', gkTempo: 'fast' }, w: { pace: 1, dribbling: .7, vision: .5 } },
+  direct: { n: '직선적 역습', en: 'Direct Counter-Attack', d: '깊숙이 버티다가 빼앗으면 최전방으로 빠르고 긴 패스를 찔러 넣습니다.', ment: 0, forms: ['4-4-2', '5-3-2', '4-5-1'], tac: { passing: 3, tempo: 4, width: 1, buildUp: false, finalThird: 'shootOnSight', creative: 'disciplined', press: 0, defLine: 1, engage: 0, onLoss: 'regroup', onWin: 'counter', gkMethod: 'kick', gkTarget: 'wing', gkTempo: 'fast' }, w: { pace: 1.2, accel: .8, finishing: .5 } },
+  wing: { n: '측면 플레이', en: 'Wing Play', d: '좌우 폭을 넓게 쓰며 윙어와 풀백의 돌파와 크로스로 득점을 노립니다.', ment: 1, forms: ['4-4-2', '4-3-3', '3-4-3'], tac: { passing: 1, tempo: 2, width: 3, buildUp: true, finalThird: 'mixed', cross: 'whipped', press: 1, defLine: 2, engage: 2, onLoss: 'neutral', onWin: 'neutral', gkTarget: 'fb' }, w: { crossing: 1.2, pace: .8, heading: .4 } },
+  route1: { n: '롱볼', en: 'Route One', d: '미드필드 빌드업을 생략하고 타깃형 공격수에게 직접 긴 패스를 연결합니다.', ment: 0, forms: ['4-4-2', '3-5-2', '4-5-1'], tac: { passing: 3, tempo: 3, width: 1, buildUp: false, finalThird: 'mixed', cross: 'high', creative: 'disciplined', press: 1, defLine: 1, engage: 2, onLoss: 'neutral', onWin: 'neutral', gkMethod: 'kick', gkTarget: 'target', gkTempo: 'fast' }, w: { strength: 1, heading: 1, jumping: .6 } },
+  catenaccio: { n: '카테나치오', en: 'Catenaccio', d: '견고한 수비 조직력과 대인 방어로 실점을 최소화합니다.', ment: -1, forms: ['5-3-2', '4-5-1', '4-1-2-1-2'], tac: { passing: 1, tempo: 1, width: 0, buildUp: true, finalThird: 'mixed', creative: 'disciplined', press: 0, defLine: 1, engage: 1, onLoss: 'regroup', onWin: 'counter', tackling: 'getStuckIn', trap: 'inside' }, w: { marking: 1.2, standTackle: 1, interceptions: 1 } },
+  bus: { n: '버스 세우기', en: 'Park the Bus', d: '모든 선수가 박스 근처까지 내려앉아 공간을 틀어막고 시간을 씁니다.', ment: -3, forms: ['5-3-2', '4-5-1'], tac: { passing: 2, tempo: 0, width: 0, buildUp: false, finalThird: 'mixed', creative: 'disciplined', press: 0, defLine: 1, engage: 1, onLoss: 'regroup', onWin: 'holdShape', tackling: 'stayOnFeet', trap: 'inside', gkMethod: 'kick', gkTempo: 'slow' }, w: { marking: 1, standTackle: 1, strength: .6, heading: .6 } }
 };
+const STYLE_KEYS = Object.keys(STYLES);
+// 이전 버전 저장 파일의 AI 성향 이름 호환
+Object.assign(STYLES, { poss: STYLES.control, counter: STYLES.fluid, press: STYLES.gegen, block: STYLES.catenaccio, bal: STYLES.control });
+// 성향 7단계: 스타일과 별개로 팀 전체의 공격성·위험 감수 수준. 값은 일반형(0) 대비 지침 변화량
+const MENTS = [
+  { v: -3, n: '극단적 수비형', en: 'Very Defensive', d: '점유를 포기하고 모두가 박스 주변에 밀집합니다. 막판 리드를 지킬 때.', off: { defLine: -2, engage: -2, tempo: -1, press: -1, passing: 1 }, waste: 2 },
+  { v: -2, n: '수비형', en: 'Defensive', d: '라인을 깊게 내리고 안전한 패스와 걷어내기를 선호합니다.', off: { defLine: -1, engage: -2, tempo: -1, press: -1 }, waste: 2 },
+  { v: -1, n: '신중형', en: 'Cautious', d: '실점 방지를 우선하고 확실한 기회에만 전진합니다.', off: { defLine: -1, engage: -1 }, waste: 1 },
+  { v: 0, n: '일반형', en: 'Balanced', d: '공격과 수비의 균형을 맞춘 표준 성향입니다.', off: {}, waste: 1 },
+  { v: 1, n: '지배형', en: 'Positive', d: '주도권을 쥐고 라인을 다소 올려 전진 빈도를 높입니다.', off: { defLine: 1, engage: 1 }, waste: 1 },
+  { v: 2, n: '공격형', en: 'Attacking', d: '위험을 감수하고 템포와 전방 압박을 높입니다.', off: { defLine: 1, engage: 1, tempo: 1, press: 1 }, waste: 0 },
+  { v: 3, n: '극단적 공격형', en: 'Very Attacking', d: '수비를 사실상 포기하고 전방에 숫자를 쏟아붓습니다. 반드시 골이 필요할 때.', off: { defLine: 2, engage: 2, tempo: 2, press: 1, passing: 1 }, waste: 0 }
+];
+const TAC_MAX = { defLine: 4, engage: 4, tempo: 4, press: 3, passing: 3 };
+const mentOf = v => MENTS.find(m => m.v === (v || 0)) || MENTS[3];
+// 성향 바꾸기: 이전 성향의 변화량을 빼고 새 성향의 변화량을 더함 (사용자가 바꿔 둔 지침은 그 위에 유지)
+function setMent(t, v) {
+  const a = mentOf(t.ment).off, b = mentOf(v).off;
+  for (const k in TAC_MAX) t[k] = clamp((t[k] ?? 2) - (a[k] || 0) + (b[k] || 0), 0, TAC_MAX[k]);
+  t.waste = mentOf(v).waste; t.ment = v; return t;
+}
+// 스타일 적용: 지침을 스타일 기본값으로 맞춘 뒤 그 스타일의 기본 성향을 얹음
+function applyStyle(t, key) {
+  const st = STYLES[key]; if (!st) return t; const def = E.DEFAULT_TACTICS();
+  for (const k of ['width', 'passing', 'tempo', 'buildUp', 'focus', 'finalThird', 'cross', 'creative', 'onLoss', 'onWin', 'gkMethod', 'gkTarget', 'gkTempo', 'defLine', 'engage', 'press', 'tackling', 'trap', 'offsideTrap']) t[k] = st.tac[k] !== undefined ? st.tac[k] : def[k];
+  t.ment = 0; t.style = key; setMent(t, st.ment); return t;
+}
 const CLUB_A = ['Northbridge', 'Castelmar', 'Vale Royal', 'Sankt Arden', 'Rivermouth', 'Montclair', 'Halvorsen', 'Porto Leste', 'Kingsmere', 'Altavia', 'Brenton', 'Solmar', 'Dunhaven', 'Falkenberg', 'Corvin', 'Marisol', 'Ostrava Nova', 'Lindholm', 'Tresco', 'Ashgrove', 'Valdoro', 'Wexley', 'Bellarosa', 'Grenfell', 'Serrano', 'Hartwick', 'Miravalle', 'Stonegate', 'Oakhurst', 'Lumière', 'Karsten', 'Redmoor', 'Villanova', 'Eskdale', 'Torvik', 'Almendra', 'Blackwater', 'Zorin', 'Calderon', 'Whitby'];
 const CLUB_B = ['United', 'City', 'FC', 'Athletic', 'Rovers', 'SC', 'Town', 'Albion', 'CF', 'Wanderers', 'Sporting', '1909', 'AC', 'Rangers', 'Dynamo'];
 const KITS = [['#d81e2c', '#ffffff'], ['#1e5bd8', '#ffffff'], ['#0f8a4b', '#ffffff'], ['#111318', '#f2c14e'], ['#7a1fa2', '#ffffff'], ['#f07b1a', '#111318'], ['#19b5c9', '#0b2530'], ['#ffffff', '#1b2a52'], ['#8c1c13', '#f4d58d'], ['#1b4332', '#d8f3dc'], ['#0b2545', '#8da9c4'], ['#e63973', '#ffffff'], ['#ffd400', '#111318'], ['#3a0ca3', '#f72585'], ['#6c757d', '#111318'], ['#2d6a4f', '#ffd166'], ['#9d0208', '#111318'], ['#00509d', '#fdc500'], ['#5f0f40', '#fb8b24'], ['#264653', '#e9c46a'], ['#bc4749', '#f2e8cf'], ['#22577a', '#80ed99'], ['#4a4e69', '#f2e9e4'], ['#b5179e', '#111318'], ['#606c38', '#fefae0'], ['#003049', '#f77f00'], ['#780000', '#fdf0d5'], ['#0077b6', '#caf0f8'], ['#283618', '#dda15e'], ['#e85d04', '#ffffff'], ['#343a40', '#74c69d'], ['#7209b7', '#f8f9fa'], ['#14213d', '#fca311'], ['#38b000', '#111318'], ['#c9184a', '#fff0f3'], ['#005f73', '#e9d8a6']];
@@ -78,7 +110,7 @@ function makeManagers(T, db) {
   const fromClub = (c, i) => ({ id: 'DX' + i, name: c.name, short: c.short, color1: c.color1, color2: c.color2, club: c.id });
   const mine = real && cfg.me.club ? byId(cfg.me.club) : null;
   out.push({ id: 0, ctrl: 'user', uid: 'local', name: cfg.me.mgr || '감독', style: 'user', formation: cfg.me.formation || '4-3-3', team: mine ? fromClub(mine, 0) : { id: 'DX0', name: cfg.me.name || '나의 팀', short: (cfg.me.short || 'MY').toUpperCase().slice(0, 4), color1: cfg.me.color1, color2: cfg.me.color2 } });
-  const names = r.shuffle(CLUB_A.slice()), kits = r.shuffle(KITS.slice()), styles = Object.keys(STYLES); const usedShort = new Set([out[0].team.short]);
+  const names = r.shuffle(CLUB_A.slice()), kits = r.shuffle(KITS.slice()), styles = STYLE_KEYS; const usedShort = new Set([out[0].team.short]);
   let clubs = [];
   if (real) { const used = new Set(mine ? [mine.id] : []); if (cfg.aiPick === 'manual') for (const id of cfg.aiClubs || []) { const c = byId(id); if (c && !used.has(id) && clubs.length < cfg.n - 1) { clubs.push(c); used.add(id); } }
     const need = cfg.n - 1 - clubs.length; if (need > 0) { const cand = r.shuffle(clubsFor(db, cfg, need, used).slice()); clubs = clubs.concat(cand.slice(0, need)); } r.shuffle(clubs); }
@@ -190,7 +222,7 @@ function aiSetup(T, m, unavail) {
   const mg = T.mgrs[m]; const team = teamOf(T, m); const un = unavail || new Set();
   const tp = Object.assign({}, team, { players: team.players.filter(p => !un.has(p.id)) });
   const form = E.FORMATIONS[mg.formation] ? mg.formation : '4-3-3'; const s = E.makeSetup(tp, form);
-  const st = STYLES[mg.style] || STYLES.bal; Object.assign(s.tactics, st.tac);
+  applyStyle(s.tactics, STYLES[mg.style] ? mg.style : 'control'); s.tactics.style = STYLES[mg.style] ? mg.style : 'control';
   s.roles = s.lineup.map((id, i) => { const p = T.players[id]; const code = E.FORMATIONS[form][i][0]; return p ? bestRole(p, code) : E.FORMATIONS[form][i][3]; });
   return s;
 }
@@ -501,5 +533,5 @@ function archiveOf(T) {
   return { id: T.id, name: T.name, format: T.cfg.format, n: T.cfg.n, draftMode: T.cfg.draftMode, ended: T.ended || Date.now(), champion: T.mgrs[T.champion].team.name, champMine: T.champion === me, myTeam: T.mgrs[me].team.name, place, rec: [w, d, l], scorer: nm(aw.scorer), assist: nm(aw.assist), mvp: nm(aw.mvp) };
 }
 
-G.DXC = { clubIndex, clubsFor, FORMATS, DRAFT_MODES, POOL_PRESETS, DEFAULT_CFG, STYLES, GL, KO_NAME, GRP, SLOT_G, rngOf, realIndex, leaguesOf, poolPreview, buildPool, newTournament, makeManagers, teamOf, teamFromIds, assignNumbers, xiValue, bestRole, aiSetup, repairSetup, userSetup, matchSetup, teamRating, draftInit, draftOptions, draftPick, draftAdvance, draftAuto, draftGrades, needs, fcOffer, fcCode, fcSeq, snakeWho, setIdx, canRedraft, redraft, aiRedraft, compInit, standings, tableOf, qualLine, dayStarted, dayDone, nextFixtureOf, winnerOf, advance, alive, suspendedSet, fxSeed, buildJob, applyResult, resolveKO, resultText, fullSummary, stats, bestXI, awards, archiveOf, news };
+G.DXC = { STYLE_KEYS, MENTS, mentOf, setMent, applyStyle, clubIndex, clubsFor, FORMATS, DRAFT_MODES, POOL_PRESETS, DEFAULT_CFG, STYLES, GL, KO_NAME, GRP, SLOT_G, rngOf, realIndex, leaguesOf, poolPreview, buildPool, newTournament, makeManagers, teamOf, teamFromIds, assignNumbers, xiValue, bestRole, aiSetup, repairSetup, userSetup, matchSetup, teamRating, draftInit, draftOptions, draftPick, draftAdvance, draftAuto, draftGrades, needs, fcOffer, fcCode, fcSeq, snakeWho, setIdx, canRedraft, redraft, aiRedraft, compInit, standings, tableOf, qualLine, dayStarted, dayDone, nextFixtureOf, winnerOf, advance, alive, suspendedSet, fxSeed, buildJob, applyResult, resolveKO, resultText, fullSummary, stats, bestXI, awards, archiveOf, news };
 })(typeof window !== 'undefined' ? window : globalThis);

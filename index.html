@@ -660,6 +660,66 @@ select, input[type=text], input[type=number], input[type=search], textarea { bor
 .dx-champ { text-align: center; position: relative; overflow: hidden; padding: 10px 0; } .dx-champ .cup { font-size: 76px; line-height: 1; animation: dxPop .7s both; } .dx-champ h1 { font-size: 52px; color: var(--gold); }
 .dx-awards { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 8px; text-align: left; } .dx-awards .aw { padding: 11px 13px; border-radius: 12px; background: var(--panel2); } .dx-awards .n { font-weight: 700; font-size: 15px; }
 .dx-confetti { position: absolute; inset: 0; pointer-events: none; } .dx-confetti i { position: absolute; top: -10px; width: 8px; height: 14px; border-radius: 2px; animation: dxFall linear infinite; }
+
+/* ===================== 경기 화면 (FM식 패널) ===================== */
+.match.fm { grid-template-columns: minmax(0, 1fr) 380px; grid-template-rows: auto minmax(0, 1fr) auto; }
+.match.fm .view { grid-column: 1; grid-row: 2; }
+.match.fm .mdash { grid-column: 1; grid-row: 2; display: none; flex-direction: column; gap: 10px; padding: 12px; min-height: 0; overflow: hidden; }
+.match.fm.between .view { visibility: hidden; position: absolute; width: 1px; height: 1px; }
+.match.fm.between .mdash { display: flex; }
+.match.fm .side { grid-row: 2 / 4; grid-column: 2; display: flex; flex-direction: column; gap: 10px; padding: 10px; background: var(--bg); border-left: 1px solid var(--line); min-height: 0; }
+.mp { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.mph { display: flex; align-items: center; gap: 4px; padding: 6px; border-bottom: 1px solid var(--line); background: var(--panel2); }
+.mph select { flex: 1; min-width: 0; border: 0; background: transparent; font-weight: 700; padding: 5px 6px; text-align: center; text-align-last: center; }
+.mpn { border: 0; background: transparent; color: var(--muted); width: 30px; height: 30px; border-radius: 8px; font-size: 11px; }
+.mpn:hover { background: var(--panel3); color: var(--fg); }
+.mpb { flex: 1; min-height: 0; overflow: auto; padding: 10px 12px; }
+.mpb .card { padding: 10px; }
+.mstrip { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 14px; border-radius: 12px; background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 12%, var(--panel)), var(--panel)); border: 1px solid var(--line); }
+.mstrip .ms1 { font-family: var(--display); font-size: 20px; font-weight: 700; }
+.mdgrid { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.mdgrid .mp { min-height: 0; }
+.prow.sel { background: color-mix(in srgb, var(--accent) 14%, transparent); border-radius: 6px; }
+.ctrl .grow { flex: 1; }
+.ctrlmore { position: relative; } .ctrlmore summary { list-style: none; display: inline-block; cursor: pointer; } .ctrlmore summary::-webkit-details-marker { display: none; }
+.ctrlmore .cmbox { position: fixed; right: 396px; bottom: 60px; z-index: 30; width: min(380px, 92vw); display: grid; gap: 10px; padding: 14px; border-radius: 12px; background: var(--panel); border: 1px solid var(--line2); box-shadow: 0 12px 30px rgba(0,0,0,.5); }
+.ctrlmore .cmbox .lbl { min-width: 64px; }
+@media (max-width: 900px) { .ctrlmore .cmbox { right: 8px; bottom: 8px; } .match.fm { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(240px, 50vh) auto auto; } .match.fm .side { grid-column: 1; grid-row: 4; border-left: 0; } .match.fm .side .mp { flex: none; height: 320px; } .mdgrid { grid-template-columns: minmax(0, 1fr); overflow: auto; } .mdgrid .mp { height: 300px; flex: none; } }
+
+/* ===================== 전술: 자리 팝업 · 예상 배치 · 스타일 ===================== */
+.modal .box:has(.spop) { width: min(820px, 100%); }
+.spop .mhead h2 .linkbtn { font: inherit; text-decoration: none; }
+.spsec { padding: 12px 0; border-top: 1px solid var(--line); display: grid; gap: 8px; }
+.rolegrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
+.rolecard { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 9px 11px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel2); color: var(--fg); text-align: left; }
+.rolecard b { font-size: 13px; font-weight: 600; } .rolecard .star { color: var(--accent); } .rolecard .num { font-size: 16px; font-weight: 700; }
+.rolecard[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--panel2)); }
+.pigrp2 { display: grid; gap: 5px; padding: 8px 10px; border-radius: 10px; background: var(--panel2); }
+.pigrp2 .pg { font-family: var(--display); font-weight: 700; letter-spacing: .05em; color: var(--muted); font-size: 13px; }
+.pirow { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 10px; align-items: center; } .pirow .pl2 { font-size: 13px; }
+.pirow .seg { background: var(--panel); } @media (max-width: 560px) { .pirow { grid-template-columns: 1fr; gap: 3px; } }
+.swaplist { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 4px; }
+.swaprow { display: flex; align-items: center; gap: 8px; padding: 6px 9px; border-radius: 8px; border: 0; background: var(--panel2); color: var(--fg); font-size: 13px; text-align: left; } .swaprow:hover { background: var(--panel3); } .swaprow .sn { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .swaprow .num { min-width: 24px; text-align: right; font-size: 15px; font-weight: 700; }
+.shp { position: relative; aspect-ratio: 68 / 80; border-radius: 8px; overflow: hidden; background: #245a33; border: 2px solid rgba(240,245,240,.7); }
+.shp .ln { position: absolute; pointer-events: none; border: 0 solid rgba(240,245,240,.55); } .shp .ln.mid { left: 0; right: 0; top: 50%; border-top-width: 2px; } .shp .ln.boxa { left: 22%; right: 22%; top: 0; height: 15%; border-width: 0 2px 2px; } .shp .ln.boxb { left: 22%; right: 22%; bottom: 0; height: 15%; border-width: 2px 2px 0; }
+.shp .cell { position: absolute; display: grid; place-items: center; font-size: 10.5px; color: rgba(255,255,255,.82); border: 1px solid rgba(255,255,255,.1); overflow: hidden; white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.5); }
+.shp .cell.gap { background: repeating-linear-gradient(45deg, rgba(229,72,77,.42) 0 6px, rgba(229,72,77,.18) 6px 12px); color: #ffd6d7; font-weight: 700; }
+.shp .cell.out { border-color: rgba(255,255,255,.04); background: rgba(0,0,0,.18); }
+.shp .rng { position: absolute; transform: translate(-50%, -50%); border-radius: 50%; border: 1.5px dashed; pointer-events: none; }
+.shp .slot { width: 70px; cursor: pointer; } .shp .slot .nm { font-size: 10.5px; }
+.tteam .ti-group.withinfo { display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 18px; align-items: start; }
+@media (max-width: 760px) { .tteam .ti-group.withinfo { grid-template-columns: 1fr; } .tinfobox { max-width: 200px; } }
+.tinfobox { display: grid; gap: 6px; position: sticky; top: 8px; } .tinfo { width: 100%; display: block; }
+.tinfo .pf { fill: #245a33; stroke: rgba(240,245,240,.7); stroke-width: 1.5; } .tinfo .pl { fill: none; stroke: rgba(240,245,240,.4); stroke-width: 1; } .tinfo .tx { font-size: 8.5px; fill: #fff; font-family: var(--body); font-weight: 600; }
+.stylegrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
+.stylecard { display: grid; gap: 1px; padding: 9px 11px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel2); color: var(--fg); text-align: left; } .stylecard b { font-size: 14px; } .stylecard span { font-size: 11px; color: var(--muted); }
+.stylecard[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--panel2)); }
+.mentbar { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; }
+.mentbar button { border: 0; padding: 9px 4px; font-size: 12.5px; font-weight: 700; color: #fff; opacity: .45; border-radius: 6px; }
+.mentbar .m0 { background: #2f6fd0; } .mentbar .m1 { background: #3f86c9; } .mentbar .m2 { background: #4a9bb0; } .mentbar .m3 { background: #5d8f3d; } .mentbar .m4 { background: #c49a2d; } .mentbar .m5 { background: #d9772b; } .mentbar .m6 { background: #cf3f4a; }
+.mentbar button[aria-pressed="true"] { opacity: 1; box-shadow: 0 0 0 2px #fff inset; }
+@media (max-width: 700px) { .mentbar { grid-template-columns: repeat(4, 1fr); } }
+.tac { grid-template-columns: minmax(300px, 1fr) minmax(300px, 1.1fr); }
 </style></head>
 <body>
 <div class="app" id="app">
