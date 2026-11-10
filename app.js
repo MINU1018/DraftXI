@@ -785,6 +785,7 @@ function lineupTab(ctx) {
   F.forEach((s, i) => {
     const p = playerOf(team, setup.lineup[i]);
     const lp = live ? live.T.players.find(q => q.slot === i && !q.off) : null;
+    if (live && !lp) { const gone = live.T.all.find(q => q.slot === i && q.sentOff); pitch.append(h('div', { class: 'slot gone', style: { left: (50 + s[2] * 41) + '%', top: (95 - s[1] * 92) + '%' } }, h('span', { class: 'disc' }, '✕'), h('span', { class: 'nm' }, gone ? shortName(gone.name) : '빈 자리'), h('span', { class: 'meta' }, gone ? '퇴장' : '선수 없음'))); return; }
     const ic = IPF[i][0]; const lv = p ? E.famLevel(p, ic) : 3; const rt = p ? E.posRating(p, ic) : null;
     const susp = ctx.unavail && p && ctx.unavail.has(p.id);
     const btn = h('button', { class: 'slot ' + ['fam-x', 'fam-bad', 'fam-mid', ''][lv], 'data-si': i, 'aria-pressed': String(S.selSlot === i), style: { left: (50 + s[2] * 41) + '%', top: (95 - s[1] * 92) + '%' }, title: p ? `${p.name} (대표 ${posLabel(p.pos)} ${D.calcOvr(p.stats, p.pos)}) — ${posLabel(s[0])} 자리 능력치 ${rt} · ${FAM_LBL[lv]} · 끌어서 다른 선수 위에 놓으면 서로 자리 교체, 빈 곳에 놓으면 위치 이동` : posLabel(s[0]) },
@@ -881,31 +882,6 @@ function swapPick(ctx, p) {
 }
 // 역할 목록에 선수의 유형 적합도 표시 (★ = 가장 잘 맞는 역할)
 function roleFit(p, code) { const m = {}; if (p) for (const a of E.archsOf(p, code)) if (m[a.role] == null || a.v > m[a.role]) m[a.role] = a.v; return m; }
-function roleOpts(p, code) { const f = roleFit(p, code); const best = Object.entries(f).sort((a, b) => b[1] - a[1])[0]; return E.rolesForSlot(code).map(r => [r, `${E.ROLES[r].n}${f[r] != null ? ` · ${Math.round(f[r])}` : ''}${best && best[0] === r ? ' ★' : ''}`]); }
-function roleHint(p, code) { if (!p) return null; const a = E.archsOf(p, code)[0]; return a ? h('span', { class: 'hint' }, `추천: ${a.n} (${Math.round(a.v)})`) : null; }
-function slotEditor(ctx, i) {
-  const { team, setup, live } = ctx; const s = E.slotsOf(setup)[i];
-  const p = playerOf(team, setup.lineup[i]);
-  setup.instr[i] = normInstr(Object.assign(E.DEFAULT_INSTR(), setup.instr[i] || {}));
-  const ins = setup.instr[i];
-  const card = h('div', { class: 'card stack' });
-  card.append(h('div', { class: 'row', style: { justifyContent: 'space-between' } }, h('div', null, h('div', { class: 'lbl' }, `${posLabel(s[0])} (${POS_KO[s[0]]}) 자리`), h('div', { style: { fontSize: '17px', fontWeight: 600 } }, p ? p.name : '-')), h('button', { class: 'btn sm ghost', onclick: () => { S.selSlot = null; ctx.onChange(); } }, '닫기')));
-  card.append(h('div', { class: 'instr' },
-    h('div', { class: 'f' }, h('label', { class: 'lbl', for: 'role' + i }, '역할'), sel(roleOpts(p, s[0]), setup.roles[i], v => { setup.roles[i] = v; ctx.onChange(); }, 'role' + i), roleHint(p, s[0])),
-  ));
-  // 포지션별 개인 지침
-  const g = E.SLOT_GROUP[s[0]] || 'CM'; const allowed = E.PI_ALLOWED[g] || [];
-  for (const [gk, gl] of PI_GROUPS) {
-    const keys = allowed.filter(k => PI_UI[k] && PI_UI[k][2] === gk); const extra = gk === 'def' && allowed.includes('markTarget');
-    if (!keys.length && !extra) continue;
-    const box = h('div', { class: 'instr' });
-    for (const k of keys) { const opts = piOptions(k, g); box.append(h('div', { class: 'f' }, h('label', { class: 'lbl', for: 'in' + k + i }, PI_UI[k][0]), sel(opts.map(([v, l]) => [String(v), l]), String(ins[k] ?? E.DEFAULT_INSTR()[k]), v => { ins[k] = typeof opts[0][0] === 'number' ? +v : v; ctx.onChange(); }, 'in' + k + i))); }
-    if (extra) box.append(h('div', { class: 'f' }, h('label', { class: 'lbl', for: 'mt' + i }, '특정 선수 마크'), sel([['-1', '없음'], ...oppSlots(ctx).map(([si, name]) => [String(si), name])], String(ins.markTarget), v => { ins.markTarget = +v; ctx.onChange(); }, 'mt' + i)));
-    card.append(h('div', { class: 'pigrp' }, h('div', { class: 'lbl' }, gl), box));
-  }
-  card.append(h('p', { class: 'hint', style: { margin: 0 } }, `${posLabel(s[0])} 자리에서 쓸 수 있는 지침만 보입니다. 지침은 경기 중 선수의 위치·패스 선택·드리블 방향·크로스 지점·압박 거리 등에 그대로 반영됩니다.`));
-  return card;
-}
 function oppSlots(ctx) {
   if (ctx.live) { const O = ctx.live.M.teams[1 - ctx.live.T.side]; return O.players.filter(p => !p.off).map(p => [p.slot, `${p.code} ${p.name}`]); }
   const os = ctx.oppSetup, ot = ctx.oppTeam; if (!os || !ot) return [];
@@ -1029,6 +1005,7 @@ function shapeModel(ctx, phase, line) {
       rx = .09 + (t.press ?? 1) * .015 + (ins.press || 0) * .02 + (RD.wcov || 0) * .25 + Math.max(0, RD.press || 0) * .03; ry = .05 + (t.press ?? 1) * .012 + (ins.press || 0) * .015;
     }
     if (code === 'GK') { x = 0; rx = .1; ry = .035; }
+    if (ctx.live && !ctx.live.T.players.some(q => q.slot === i && !q.off)) return;
     const p = playerOf(team, setup.lineup[i]);
     out.push({ i, p, code, x: Math.max(-1, Math.min(1, x)), y: Math.max(.03, Math.min(.97, y)), rx, ry, name: p ? shortName(p.name) : posLabel(code) });
   });
@@ -1272,13 +1249,95 @@ function viewMatch() {
   setTimeout(() => { initRenderers(); buildCtrl(); updateSide(true); startLoop(); }, 0);
   return wrap;
 }
+// ---------- 퀵 전술 조정 (Tactical Tweaks): 전술 화면을 열지 않고 켜고 끄는 조정. 여러 개를 동시에 켤 수 있고 끌 때까지 유지 ----------
+const TW_MAX = { defLine: 4, engage: 4, tempo: 4, press: 3, passing: 3, width: 3 };
+const TW_TEAM = [
+  ['공격', [
+    { id: 'atk', n: '더 공격적으로', x: 'ment', add: { defLine: 1, engage: 1, tempo: 1 } }, { id: 'def', n: '더 수비적으로', x: 'ment', add: { defLine: -1, engage: -1, tempo: -1 } },
+    { id: 'tup', n: '템포 올리기', x: 'tempo', add: { tempo: 1 } }, { id: 'tdn', n: '템포 낮추기', x: 'tempo', add: { tempo: -1 } },
+    { id: 'wide', n: '넓게 벌리기', x: 'width', add: { width: 1 } }, { id: 'nar', n: '좁게 모이기', x: 'width', add: { width: -1 } },
+    { id: 'long', n: '롱볼로 전환', x: 'pass', add: { passing: 2 }, set: { buildUp: false } }, { id: 'short', n: '짧게 풀어가기', x: 'pass', add: { passing: -1 }, set: { buildUp: true } },
+    { id: 'fl', n: '왼쪽 공략', x: 'focus', set: { focus: 'left' } }, { id: 'fc', n: '중앙 공략', x: 'focus', set: { focus: 'center' } }, { id: 'fr', n: '오른쪽 공략', x: 'focus', set: { focus: 'right' } },
+    { id: 'shoot', n: '기회 되면 슈팅', x: 'ft', set: { finalThird: 'shootOnSight' } }, { id: 'work', n: '박스 안으로 진입', x: 'ft', set: { finalThird: 'workIn' } }]],
+  ['수비 · 전환', [
+    { id: 'prs', n: '전방 압박 강화', x: 'press', add: { press: 1, engage: 1 } }, { id: 'drop', n: '압박 풀고 내려서기', x: 'press', add: { press: -1, engage: -1 } },
+    { id: 'lup', n: '수비 라인 올리기', x: 'line', add: { defLine: 1 } }, { id: 'ldn', n: '수비 라인 내리기', x: 'line', add: { defLine: -1 } },
+    { id: 'hard', n: '강하게 태클', x: 'tk', set: { tackling: 'getStuckIn' } }, { id: 'soft', n: '서서 수비', x: 'tk', set: { tackling: 'stayOnFeet' } },
+    { id: 'cp', n: '즉각 재압박', x: 'loss', set: { onLoss: 'counterpress' } }, { id: 'rg', n: '진형 재정비', x: 'loss', set: { onLoss: 'regroup' } },
+    { id: 'ctr', n: '빠른 역습', x: 'win', set: { onWin: 'counter' } }, { id: 'keep', n: '공 지키기', x: 'win', set: { onWin: 'holdShape' } },
+    { id: 'waste', n: '시간 끌기', x: 'waste', set: { waste: 2 } }, { id: 'trap', n: '오프사이드 트랩', x: 'trap', set: { offsideTrap: true } }]]
+];
+const TW_PL = [
+  { id: 'fw', n: '더 전진', x: 'fwd', k: 'fwd', v: 1 }, { id: 'hd', n: '위치 지키기', x: 'fwd', k: 'fwd', v: -1 },
+  { id: 's1', n: '슈팅 자주', x: 'shoot', k: 'shoot', v: 1 }, { id: 's0', n: '슈팅 자제', x: 'shoot', k: 'shoot', v: -1 },
+  { id: 'd1', n: '드리블 자주', x: 'dribble', k: 'dribble', v: 1 }, { id: 'd0', n: '드리블 자제', x: 'dribble', k: 'dribble', v: -1 },
+  { id: 'p1', n: '과감한 패스', x: 'pass', k: 'pass', v: 1 }, { id: 'p0', n: '안전한 패스', x: 'pass', k: 'pass', v: -1 },
+  { id: 'r1', n: '강하게 압박', x: 'press', k: 'press', v: 1 }, { id: 'r0', n: '압박 자제', x: 'press', k: 'press', v: -1 },
+  { id: 'mk', n: '밀착 마크', x: 'mark', k: 'mark', v: 'tight' }, { id: 't1', n: '세게 태클', x: 'tackle', k: 'tackle', v: 1 }, { id: 't0', n: '태클 조심', x: 'tackle', k: 'tackle', v: -1 },
+  { id: 'fr', n: '자유롭게 이동', x: 'free', k: 'free', v: 1 }
+];
+const TW_ALL = TW_TEAM.flatMap(g => g[1]);
+function twState(T) { const s = T.setup; if (!s.tw) s.tw = { base: { tactics: clone(s.tactics), instr: clone(s.instr) }, team: [], pl: {} }; return s.tw; }
+function twApply(T) {
+  const s = T.setup, tw = s.tw; if (!tw) return;
+  const t = clone(tw.base.tactics); for (const id of tw.team) { const d = TW_ALL.find(x => x.id === id); if (!d) continue; for (const k in d.add || {}) t[k] = Math.max(0, Math.min(TW_MAX[k], (t[k] ?? 2) + d.add[k])); Object.assign(t, d.set || {}); }
+  const ins = clone(tw.base.instr); for (const sl in tw.pl) for (const id of tw.pl[sl]) { const d = TW_PL.find(x => x.id === id); if (d && ins[sl]) ins[sl][d.k] = d.v; }
+  s.tactics = t; s.instr = ins;
+  if (!tw.team.length && !Object.values(tw.pl).some(a => a.length)) delete s.tw;
+  L.infoCache.clear(); logOp({ side: T.side, op: 'setup', s: clone(s) }); L.pT = {}; feedDirty = true;
+}
+function twToggle(T, id, slot) {
+  const tw = twState(T); const list = slot == null ? tw.team : (tw.pl[slot] = tw.pl[slot] || []); const defs = slot == null ? TW_ALL : TW_PL; const d = defs.find(x => x.id === id); if (!d) return;
+  const i = list.indexOf(id); if (i >= 0) list.splice(i, 1); else { for (let k = list.length - 1; k >= 0; k--) { const o = defs.find(x => x.id === list[k]); if (o && o.x === d.x) list.splice(k, 1); } list.push(id); }
+  twApply(T);
+}
+function twCount(T) { const tw = T.setup.tw; return tw ? tw.team.length + Object.values(tw.pl).reduce((a, x) => a + x.length, 0) : 0; }
+// 전술 화면에서 직접 고치기 전에, 켜 둔 조정을 전술에 합쳐 기준을 새로 잡음
+function twFold(T) { if (T.setup.tw) { delete T.setup.tw; toast('켜 둔 전술 조정을 지금 전술에 합쳤습니다.'); } }
+function twPlayerChips(T, p) {
+  const g = E.SLOT_GROUP[p.code] || 'CM'; const allowed = E.PI_ALLOWED[g] || []; const on = (T.setup.tw && T.setup.tw.pl[p.slot]) || [];
+  return h('div', { class: 'twchips' }, ...TW_PL.filter(d => allowed.includes(d.k)).map(d => h('button', { type: 'button', class: 'twchip', 'aria-pressed': String(on.includes(d.id)), onclick: e => { e.stopPropagation(); twToggle(T, d.id, p.slot); updateSide(true); } }, d.n)));
+}
+function tweakPanel() {
+  const box = h('div', { class: 'stack', style: { gap: '10px' } }); const side = L.control[0];
+  if (side == null || M.ended) { box.append(h('p', { class: 'hint' }, M.ended ? '경기가 끝났습니다.' : '직접 지휘하는 팀이 없는 경기입니다.')); return box; }
+  const T = M.teams[side]; const tw = T.setup.tw; const on = tw ? tw.team : []; const n = twCount(T);
+  box.append(h('div', { class: 'row', style: { justifyContent: 'space-between' } }, h('strong', null, n ? `조정 ${n}개 적용 중` : '적용 중인 조정 없음'), n ? h('button', { class: 'btn sm ghost', onclick: () => { const t2 = twState(T); t2.team = []; t2.pl = {}; twApply(T); updateSide(true); } }, '모두 해제') : null));
+  for (const [gn, defs] of TW_TEAM) box.append(h('div', null, h('div', { class: 'lbl', style: { marginBottom: '5px' } }, '팀 · ' + gn), h('div', { class: 'twchips' }, ...defs.map(d => h('button', { type: 'button', class: 'twchip', 'aria-pressed': String(on.includes(d.id)), onclick: () => { twToggle(T, d.id); updateSide(true); } }, d.n)))));
+  const ps = T.players.filter(p => !p.off).sort((a, b) => a.slot - b.slot); if (!ps.some(p => p.slot === S.twSlot)) S.twSlot = (ps.find(p => p.code !== 'GK') || ps[0] || {}).slot;
+  const cur = ps.find(p => p.slot === S.twSlot);
+  box.append(h('div', null, h('div', { class: 'lbl', style: { marginBottom: '5px' } }, '선수별'), sel(ps.map(p => [String(p.slot), `${p.num} ${shortName(p.name)} · ${posLabel(p.code)}${tw && tw.pl[p.slot] && tw.pl[p.slot].length ? ` (${tw.pl[p.slot].length})` : ''}`]), String(S.twSlot), v => { S.twSlot = +v; updateSide(true); }, 'twsel'), cur ? twPlayerChips(T, cur) : null));
+  const lag = Math.max(0, (bufEnd() - L.ph) * FRAME_DT());
+  box.append(h('p', { class: 'hint', style: { margin: 0 } }, '누르면 바로 켜지고 다시 누르면 꺼집니다. 서로 반대되는 조정은 하나만 켜집니다. 켜 둔 조정은 끌 때까지 유지되며, 전술 화면의 기본 전술 위에 얹힙니다.' + (lag > 3 ? ` 하이라이트 보기에서는 약 ${Math.round(lag)}초(경기 시간) 뒤 장면부터 반영됩니다.` : '')));
+  return box;
+}
+// ---------- 세부 스탯 창 ----------
+function xgOfPid(pid, fr) { let v = 0; for (const x of M.shotLog) if (x.p === pid && (fr == null || x.f <= fr)) v += x.xg; return v; }
+const DS_COLS = [['min', '분', p => Math.min(120, Math.round(p.r.min))], ['rt', '평점', p => liveRating(p), v => v.toFixed(1)], ['g', '골', p => p.r.goals], ['a', '도움', p => p.r.ast], ['sh', '슈팅', p => p.r.shots], ['sot', '유효', p => p.r.sot], ['xg', 'xG', p => xgOfPid(p.pid), v => v.toFixed(2)], ['kp', '키패스', p => p.r.kp],
+  ['ps', '패스', p => p.r.pass, (v, p) => `${Math.min(p.r.pass, p.r.passOk)}/${v}`], ['pp', '패스%', p => p.r.pass ? Math.min(p.r.pass, p.r.passOk) / p.r.pass * 100 : 0, v => v.toFixed(0)], ['drb', '돌파', p => p.r.drb], ['tkl', '경합', p => p.r.tkl, (v, p) => `${p.r.tklW}/${v}`], ['int', '차단', p => p.r.int], ['sav', '선방', p => p.r.sav], ['bt', '돌파 허용', p => p.r.beaten || 0], ['fl', '파울', p => p.r.foul], ['yc', '경고', p => p.yc], ['km', 'km', p => p.dist / 1000, v => v.toFixed(1)], ['en', '체력', p => p.energy, v => Math.round(v) + '%']];
+function openStats() {
+  const was = L.playing; L.playing = false; buildCtrl(); const st = { side: L.control[0] ?? 0, sort: 1, open: null };
+  const draw = () => {
+    const T = M.teams[st.side]; const c = DS_COLS[st.sort]; const ps = T.all.filter(p => p.r.min > 0).sort((a, b) => c[2](b) - c[2](a));
+    const tb = h('tbody');
+    for (const p of ps) {
+      tb.append(h('tr', { class: 'click' + (p.off ? ' sub' : ''), onclick: () => { st.open = st.open === p.pid ? null : p.pid; draw(); } }, h('td', null, h('span', { class: 'row', style: { gap: '6px', flexWrap: 'nowrap' } }, h('span', { class: 'num dim' }, p.num), h('span', { class: 'tag' }, posLabel(p.code)), h('b', null, shortName(p.name)), p.subbedIn ? h('span', { class: 'dim' }, '↑') : null, p.subbedOff ? h('span', { class: 'dim' }, '↓') : null, p.sentOff ? h('span', { style: { color: '#e46a5a' } }, '▮') : null)), ...DS_COLS.map((cc, i) => { const v = cc[2](p); return h('td', { class: 'num' + (i === st.sort ? ' hi' : '') + (cc[0] === 'rt' ? ' ' + rtClass(v) : '') }, cc[3] ? cc[3](v, p) : (v || '')); })));
+      if (st.open === p.pid) { const sm = playerSummary(p); tb.append(h('tr', { class: 'dsx' }, h('td', { colspan: DS_COLS.length + 1 }, h('div', { class: 'dsbox' }, h('div', null, h('div', { class: 'lbl' }, '히트맵 (공격 방향 →)'), heatmapSVG(p.hm)), h('div', null, h('div', { class: 'lbl' }, '패스 (실선 성공 · 점선 실패)'), passMapSVG(st.side, p.pid, 'lines')),
+        h('div', { class: 'stack', style: { gap: '4px' } }, h('div', { class: 'lbl' }, '잘한 점'), ...(sm.good.length ? sm.good.map(x => h('div', { class: 'gb good' }, x)) : [h('div', { class: 'dim' }, '-')]), h('div', { class: 'lbl', style: { marginTop: '6px' } }, '아쉬운 점'), ...(sm.bad.length ? sm.bad.map(x => h('div', { class: 'gb bad' }, x)) : [h('div', { class: 'dim' }, '-')]), h('button', { class: 'btn sm', style: { marginTop: '8px', justifySelf: 'start' }, 'data-pid': p.d.id }, '선수 프로필')))))); }
+    }
+    modal(h('div', null, h('div', { class: 'mhead' }, h('h2', { class: 'grow' }, '세부 스탯'), seg([[0, M.teams[0].name], [1, M.teams[1].name]], st.side, v => { st.side = v; st.open = null; draw(); }), h('button', { class: 'btn primary', onclick: () => { closeModal(); if (was && !M.ended) { L.playing = true; buildCtrl(); } } }, matchDone() ? '닫기' : '경기 재개')),
+      h('p', { class: 'hint', style: { marginTop: 0 } }, '열 제목을 누르면 그 기록 순으로 정렬됩니다. 선수를 누르면 히트맵·패스·평가가 펼쳐집니다. 지금 화면에 보이는 장면보다 조금 앞선 시점까지의 기록일 수 있습니다.'),
+      h('div', { class: 'dx-tscroll' }, h('table', { class: 'dx-table tight ds' }, h('thead', null, h('tr', null, h('th', null, '선수'), ...DS_COLS.map((cc, i) => h('th', { class: 'num' }, h('button', { class: 'thbtn' + (i === st.sort ? ' on' : ''), onclick: () => { st.sort = i; draw(); } }, cc[1]))))), tb))), false, 'dstats');
+  };
+  draw();
+}
 // ---------- 기록 패널: 영역마다 보고 싶은 기록을 드롭다운이나 ◀ ▶로 고름 ----------
 function panelList() {
   const a = M.teams[0].short, b = M.teams[1].short;
-  return [['feed', '해설 · 주요 장면'], ['stats', '경기 통계'], ['rate0', `평점 · 체력 — ${a}`], ['rate1', `평점 · 체력 — ${b}`], ['shots', '슈팅 맵'], ['xg', 'xG 흐름'], ['pass0', `패스 맵 — ${a}`], ['pass1', `패스 맵 — ${b}`], ['diag', '전술 진단'], ['player', '선택한 선수']];
+  return [['feed', '해설 · 주요 장면'], ['stats', '경기 통계'], ['rate0', `선수 평점 · 체력 — ${a}`], ['rate1', `선수 평점 · 체력 — ${b}`], ['tweaks', '전술 조정'], ['leaders', '부문별 1위'], ['shots', '슈팅 맵'], ['xg', 'xG 흐름'], ['pass0', `패스 맵 — ${a}`], ['pass1', `패스 맵 — ${b}`], ['heat0', `팀 히트맵 — ${a}`], ['heat1', `팀 히트맵 — ${b}`], ['diag', '우리 팀 전술 진단']];
 }
 const PANEL_DEF = ['feed', 'stats', 'rate0', 'shots'];
-const PANEL_HEAVY = { shots: 1, xg: 1, pass0: 1, pass1: 1, diag: 1 };
+const PANEL_HEAVY = { shots: 1, xg: 1, pass0: 1, pass1: 1, diag: 1, heat0: 1, heat1: 1, leaders: 1 };
 function panelsNow() { if (!Array.isArray(S.panels) || S.panels.length !== 4) S.panels = PANEL_DEF.slice(); return S.panels; }
 function panelEl(i) {
   const list = panelList(); const P = panelsNow(); if (!list.some(x => x[0] === P[i])) P[i] = PANEL_DEF[i];
@@ -1311,10 +1370,19 @@ function panelBody(kind, fr) {
     const T = M.teams[kind === 'rate0' ? 0 : 1];
     box.append(h('div', { class: 'row', style: { margin: '0 0 4px', justifyContent: 'space-between' } }, h('strong', null, T.name), h('span', { class: 'hint' }, '체력 · km · 평점')));
     const list = T.all.filter(p => p.r.min > 0 || !p.off).sort((a, b) => (a.off ? 1 : 0) - (b.off ? 1 : 0) || a.slot - b.slot);
-    for (const p of list) { const rt = liveRating(p);
-      box.append(h('div', { class: 'prow' + (S.selPid === p.pid ? ' sel' : ''), style: { opacity: p.off ? .5 : 1, cursor: 'pointer' }, onclick: () => { S.selPid = p.off || S.selPid === p.pid ? null : p.pid; feedDirty = true; } },
-        h('span', { class: 'num muted' }, p.num), h('span', null, formArrow(p.form), ' ', pl(shortName(p.name), p.d.id), talkMark(p), p.yc ? h('span', { style: { color: '#f2d03d' } }, ' ▮') : null, p.sentOff ? h('span', { style: { color: '#e46a5a' } }, ' ▮') : null, p.r.goals ? ` ⚽${p.r.goals > 1 ? p.r.goals : ''}` : ''),
-        h('span', { class: 'en2' }, h('i', { style: { width: p.energy + '%', background: p.energy < 60 ? 'var(--bad)' : p.energy < 75 ? 'var(--warn)' : 'var(--good)' } })), h('span', { class: 'num dim', style: { textAlign: 'right' } }, (p.dist / 1000).toFixed(1)), h('span', { class: 'r ' + rtClass(rt) }, rt.toFixed(1)))); }
+    const mine = L.control.includes(T.side) && !M.ended;
+    for (const p of list) { const rt = liveRating(p); const open = S.selPid === p.pid;
+      box.append(h('div', { class: 'prow' + (open ? ' sel' : ''), style: { opacity: p.off ? .5 : 1, cursor: 'pointer' }, onclick: () => { S.selPid = open ? null : p.pid; L.pT = {}; feedDirty = true; } },
+        h('span', { class: 'num muted' }, p.num), h('span', null, formArrow(p.form), ' ', shortName(p.name), h('span', { class: 'dim' }, ' ' + posLabel(p.code)), talkMark(p), p.yc ? h('span', { style: { color: '#f2d03d' } }, ' ▮') : null, p.sentOff ? h('span', { style: { color: '#e46a5a' } }, ' ▮') : null, p.r.goals ? ` ⚽${p.r.goals > 1 ? p.r.goals : ''}` : '', p.r.ast ? ` 🅰${p.r.ast > 1 ? p.r.ast : ''}` : ''),
+        h('span', { class: 'en2' }, h('i', { style: { width: p.energy + '%', background: p.energy < 60 ? 'var(--bad)' : p.energy < 75 ? 'var(--warn)' : 'var(--good)' } })), h('span', { class: 'num dim', style: { textAlign: 'right' } }, (p.dist / 1000).toFixed(1)), h('span', { class: 'r ' + rtClass(rt) }, rt.toFixed(1))));
+      if (open) { const fat = E.fatigue(p);
+        box.append(h('div', { class: 'pexp' },
+          h('div', { class: 'pexs' }, ...[['패스', `${Math.min(p.r.pass, p.r.passOk)}/${p.r.pass}`], ['키패스', p.r.kp], ['슈팅', `${p.r.shots}(${p.r.sot})`], ['xG', xgOfPid(p.pid, fr).toFixed(2)], ['돌파', p.r.drb], ['경합', `${p.r.tklW}/${p.r.tkl}`], ['차단', p.r.int], p.code === 'GK' ? ['선방', p.r.sav] : ['파울', p.r.foul]].map(([k, v]) => h('div', null, h('span', { class: 'k' }, k), h('b', { class: 'num' }, v)))),
+          h('div', { class: 'hint' }, `체력 ${Math.round(p.energy)}%${Math.round((1 - fat) * 100) ? ` (능력 -${Math.round((1 - fat) * 100)}%)` : ''} · 경기 컨디션 ${FORM_LBL[p.form]} · 자리 적합도 ${Math.round(p.fam * 100)}%`),
+          heatmapSVG(p.hm, { label: `${p.name} 히트맵` }),
+          mine && !p.off ? h('div', null, h('div', { class: 'lbl', style: { margin: '4px 0' } }, '이 선수에게 바로 지시'), twPlayerChips(T, p)) : null,
+          h('div', { class: 'row' }, h('button', { class: 'btn sm', 'data-pid': p.d.id }, '프로필'), h('button', { class: 'btn sm', onclick: e => { e.stopPropagation(); openStats(); } }, '세부 스탯')))); }
+    }
   } else if (kind === 'shots' || kind === 'xg') {
     const NS = 'http://www.w3.org/2000/svg'; const el = (t, a) => { const e = document.createElementNS(NS, t); for (const k in a) e.setAttribute(k, a[k]); return e; };
     const sh = M.shotLog.filter(x => x.f <= fr); const col = s => kc[s].c1 === '#ffffff' ? '#d8dcd8' : kc[s].c1;
@@ -1337,14 +1405,19 @@ function panelBody(kind, fr) {
     box.append(h('div', { class: 'row', style: { marginBottom: '6px' } }, seg([['network', '패스 네트워크'], ['lines', '패스 선']], S.anMode, v => { S.anMode = v; L.pT = {}; updateSide(true); })), passMapSVG(side, null, S.anMode),
       h('div', { class: 'hint' }, S.anMode === 'network' ? '점은 평균 위치(오른쪽이 공격 방향), 선 굵기는 연결 패스 수입니다.' : '실선은 성공, 점선은 실패한 패스입니다.'));
   } else if (kind === 'diag') {
-    const sides = L.control.length ? L.control : [0, 1]; if (S.anSide == null || ![0, 1].includes(S.anSide)) S.anSide = sides[0];
-    box.append(seg([[0, M.teams[0].short], [1, M.teams[1].short]], S.anSide, v => { S.anSide = v; L.pT = {}; updateSide(true); }));
-    const dg = teamDiag(S.anSide);
-    box.append(h('div', { class: 'stack', style: { gap: '6px', marginTop: '8px' } }, ...(dg.length ? dg.map(x => h('div', { class: 'diag ' + x.lvl }, h('div', { class: 'row', style: { justifyContent: 'space-between', gap: '6px' } }, h('strong', null, x.t), h('span', { class: 'dlv' }, x.lvl === 'warn' ? '주의' : x.lvl === 'good' ? '양호' : '참고')), h('div', { class: 'num dim' }, x.d), x.tip ? h('div', { class: 'tip' }, '제안: ', x.tip) : null)) : [h('p', { class: 'hint' }, '아직 진단할 내용이 없습니다.')]),
-      h('button', { class: 'btn sm', onclick: openAnalysis }, '선수별 분석 크게 보기')));
-  } else {
-    const p = S.selPid != null ? M.pidList[S.selPid] : null;
-    box.append(p ? playerCard(p) : h('p', { class: 'hint' }, '경기장이나 평점 목록에서 선수를 누르면 히트맵과 능력치가 여기에 나옵니다.'));
+    const side = L.control.length ? L.control[0] : null;
+    if (side == null) box.append(h('p', { class: 'hint' }, '직접 지휘하는 팀이 있을 때만 전술 진단을 보여줍니다.'));
+    else { const dg = teamDiag(side);
+      box.append(h('div', { class: 'stack', style: { gap: '6px' } }, ...(dg.length ? dg.map(x => h('div', { class: 'diag ' + x.lvl }, h('div', { class: 'row', style: { justifyContent: 'space-between', gap: '6px' } }, h('strong', null, x.t), h('span', { class: 'dlv' }, x.lvl === 'warn' ? '주의' : x.lvl === 'good' ? '양호' : '참고')), h('div', { class: 'num dim' }, x.d), x.tip ? h('div', { class: 'tip' }, '제안: ', x.tip) : null)) : [h('p', { class: 'hint' }, '아직 진단할 내용이 없습니다.')]))); }
+  } else if (kind === 'tweaks') {
+    box.append(tweakPanel());
+  } else if (kind === 'heat0' || kind === 'heat1') {
+    const T = M.teams[kind === 'heat0' ? 0 : 1]; const sum = new Float32Array(E.HM_W * E.HM_H); for (const p of T.all) if (p.hm && p.code !== 'GK') for (let i = 0; i < sum.length; i++) sum[i] += p.hm[i];
+    box.append(heatmapSVG(sum, { label: `${T.name} 팀 히트맵` }), h('div', { class: 'hint' }, `${T.name} 필드 선수 전체가 머문 위치 (공격 방향 →). 선수 한 명의 히트맵은 평점 목록에서 선수를 누르면 나옵니다.`));
+  } else if (kind === 'leaders') {
+    const all = M.pidList.filter(p => p.r.min > 0); const top = (label, f, fmt) => { const b = all.slice().sort((x, y) => f(y) - f(x))[0]; if (!b || !(f(b) > 0)) return null; return h('div', { class: 'ldr', onclick: () => { S.selPid = b.pid; L.pT = {}; feedDirty = true; } }, h('span', { class: 'k' }, label), h('span', { class: 'pip', style: { background: kc[b.side].c1, border: '1px solid ' + kc[b.side].c2 } }), h('span', { class: 'n' }, shortName(b.name)), h('b', { class: 'num' }, fmt ? fmt(f(b)) : f(b))); };
+    box.append(h('div', { class: 'stack', style: { gap: '3px' } }, ...[top('평점', p => liveRating(p), v => v.toFixed(1)), top('슈팅', p => p.r.shots), top('xG', p => xgOfPid(p.pid, fr), v => v.toFixed(2)), top('키패스', p => p.r.kp), top('패스 성공', p => Math.min(p.r.pass, p.r.passOk)), top('돌파', p => p.r.drb), top('경합 승리', p => p.r.tklW), top('패스 차단', p => p.r.int), top('선방', p => p.r.sav), top('뛴 거리', p => p.dist / 1000, v => v.toFixed(1) + 'km'), top('파울', p => p.r.foul)].filter(Boolean)),
+      h('div', { class: 'hint', style: { marginTop: '6px' } }, '선수를 누르면 평점 목록에서 그 선수의 기록이 펼쳐집니다.'));
   }
   return box;
 }
@@ -1386,27 +1459,34 @@ function buildCtrl() {
     return;
   }
   const done = matchDone();
-  const more = h('details', { class: 'ctrlmore' }, h('summary', { class: 'btn sm' }, '화면 설정'),
+  const more = h('details', { class: 'ctrlmore' }, h('summary', { class: 'btn sm' }, '재생 · 화면 설정'),
     h('div', { class: 'cmbox' },
+      !done && L.ctx.type !== 'review' ? hlControls(false) : null,
       h('div', { class: 'row' }, h('span', { class: 'lbl' }, '화면'), seg([['3d', '3D'], ['2d', '2D']], S.view, v => { S.view = v; savePrefs(); applyViewVisibility(); resizeView(); buildCtrl(); }), camControls()),
       S.view === '3d' && R3 ? h('div', { class: 'row' }, h('span', { class: 'lbl' }, '선수 모델'), sel([['human', '사람 모델'], ['simple', '단순 모델']], S.model, v => { S.model = v; savePrefs(); R3.setModel(v, modelState); }, 'model')) : null,
       h('div', { class: 'row' }, h('span', { class: 'lbl' }, '이름'), sel([['none', '이름 숨김'], ['carrier', '볼 보유자 이름'], ['all', '모든 이름']], S.names, v => { S.names = v; savePrefs(); $('#labels').innerHTML = ''; }, 'names')),
       h('label', { class: 'row', style: { gap: '6px' } }, h('input', { type: 'checkbox', checked: !!S.pitchAlways || null, onchange: e => { S.pitchAlways = e.target.checked; savePrefs(); } }), '하이라이트 사이에도 경기장 표시'),
       h('div', { class: 'row' }, h('button', { class: 'btn sm', onclick: toggleFullscreen }, isFs() ? '전체화면 끄기' : '전체화면'),
-        isFs() ? h('button', { class: 'btn sm', onclick: () => { S.fsSide = !S.fsSide; $('.match').classList.toggle('noside', !S.fsSide); resizeView(); buildCtrl(); } }, S.fsSide ? '옆 패널 숨기기' : '옆 패널 보기') : null)));
+        isFs() ? h('button', { class: 'btn sm', onclick: () => { S.fsSide = !S.fsSide; $('.match').classList.toggle('noside', !S.fsSide); resizeView(); buildCtrl(); } }, S.fsSide ? '옆 패널 숨기기' : '옆 패널 보기') : null),
+      h('div', { class: 'hint' }, '단축키: 스페이스 재생/일시정지 · T 전술·교체 · Q 전술 조정 · S 세부 스탯 · R 리플레이')));
+  const mine = L.control.length && !M.ended; const nTw = mine ? twCount(M.teams[L.control[0]]) : 0;
   const items = [
     !done ? h('button', { class: 'btn sm' + (L.playing ? '' : ' primary'), onclick: togglePlay, title: '스페이스바' }, L.playing ? '일시정지' : '재생') : h('span', { class: 'tag' }, '경기 종료'),
-    !done && L.ctx.type !== 'review' ? hlControls(true) : null,
+    !done && L.ctx.type !== 'review' ? h('span', { class: 'dim', style: { fontSize: '12px' } }, (HL_MODES.find(x => x[0] === S.hl) || [])[1] || '') : null,
     h('span', { class: 'sep' }),
-    L.control.length && !M.ended ? h('button', { class: 'btn sm primary', onclick: openLiveTactics }, '전술·교체') : null,
-    L.control.length && !M.ended ? h('button', { class: 'btn sm', onclick: () => openTalk() }, '선수단 대화') : null,
-    h('button', { class: 'btn sm', onclick: () => startReplay(Math.max(0, L.ph - 12 / FRAME_DT()), false) }, '리플레이'),
+    mine ? h('button', { class: 'btn sm primary', onclick: openLiveTactics, title: 'T' }, '전술·교체') : null,
+    mine ? h('button', { class: 'btn sm' + (nTw ? ' on' : ''), onclick: showTweaks, title: 'Q — 전술 화면을 열지 않고 바로 켜고 끄는 조정' }, nTw ? `전술 조정 (${nTw})` : '전술 조정') : null,
+    h('button', { class: 'btn sm', onclick: openStats, title: 'S — 모든 선수의 세부 기록' }, '세부 스탯'),
+    mine ? h('button', { class: 'btn sm', onclick: () => openTalk() }, '선수단 대화') : null,
+    h('button', { class: 'btn sm', onclick: () => startReplay(Math.max(0, L.ph - 12 / FRAME_DT()), false), title: 'R' }, '리플레이'),
     h('span', { class: 'grow' }),
     more,
     !done && L.ctx.type !== 'review' ? h('button', { class: 'btn sm', onclick: simToEnd, title: '남은 시간을 즉시 계산합니다' }, '결과까지') : (L.ctx.back ? h('button', { class: 'btn sm primary', onclick: () => go(L.ctx.back) }, '돌아가기') : h('button', { class: 'btn sm primary', onclick: () => go('m_home') }, '돌아가기'))
   ];
   c.append(...items.filter(Boolean));
 }
+// 전술 조정 패널을 눈에 보이는 영역에 띄움
+function showTweaks() { const P = panelsNow(); const vis = [0, 1, 2, 3].filter(i => { const e = document.getElementById('mpb' + i); return e && e.offsetParent !== null; }); if (!vis.some(i => P[i] === 'tweaks')) { const i = vis[0] ?? 0; P[i] = 'tweaks'; const s2 = document.getElementById('mps' + i); if (s2) s2.value = 'tweaks'; savePrefs(); } updateSide(true); const e = document.getElementById('mpb' + P.indexOf('tweaks')); if (e) { e.parentElement.classList.add('flash'); setTimeout(() => e.parentElement.classList.remove('flash'), 900); } }
 function camControls() {
   if (S.view === '3d' && R3) return h('span', { class: 'row', style: { gap: '6px' } }, camSel(), zoomCtl());
   return sel([['full', '전체 경기장'], ['follow', '공 따라가기']], S.cam2d, v => { S.cam2d = v; savePrefs(); }, 'cam2');
@@ -1430,7 +1510,7 @@ function toggleFullscreen() {
 }
 document.addEventListener('fullscreenchange', () => { const m = $('.match'); if (!m) return; if (!document.fullscreenElement) { m.classList.remove('noside'); } document.querySelectorAll('.modal, .toast').forEach(e => { const root = overlayRoot(); if (e.parentNode !== root) root.append(e); }); setTimeout(() => { resizeView(); buildCtrl(); }, 60); });
 function togglePlay() { L.playing = !L.playing; buildCtrl(); }
-document.addEventListener('keydown', e => { if (S.screen !== 'match' || !M || L.modal) return; if (e.code === 'Space' && !/INPUT|SELECT|TEXTAREA|BUTTON/.test(document.activeElement.tagName)) { e.preventDefault(); if (L.replay) { L.replay.playing = !L.replay.playing; buildCtrl(); } else togglePlay(); } });
+document.addEventListener('keydown', e => { if (S.screen !== 'match' || !M || L.modal) return; if (!/INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName) && !e.ctrlKey && !e.metaKey && !e.altKey) { const k = e.key.toLowerCase(); const mine = L.control.length && !M.ended; if (k === 't' && mine) return openLiveTactics(); if (k === 'q' && mine) return showTweaks(); if (k === 's') return openStats(); if (k === 'r' && !L.replay) return startReplay(Math.max(0, L.ph - 12 / FRAME_DT()), false); } if (e.code === 'Space' && !/INPUT|SELECT|TEXTAREA|BUTTON/.test(document.activeElement.tagName)) { e.preventDefault(); if (L.replay) { L.replay.playing = !L.replay.playing; buildCtrl(); } else togglePlay(); } });
 function startLoop() { if (loopOn) return; loopOn = true; L.last = performance.now(); rafId = requestAnimationFrame(loop); }
 function pauseLoop() { loopOn = false; cancelAnimationFrame(rafId); }
 function loop(now) {
@@ -1538,12 +1618,12 @@ function updateSide(force) {
   const kc = L.kits; const fr = L.ph; const P = panelsNow();
   const sc = $('#scorers'); if (sc) { sc.innerHTML = ''; for (const s of [0, 1]) { const g = M.events.filter(e => e.type === 'goal' && e.side === s && e.frame <= fr); if (g.length) sc.append(h('span', null, h('span', { class: 'pip', style: { background: kc[s].c1, border: '1px solid ' + kc[s].c2 } }), g.map(e => { const p = M.pidList[e.pid]; return `${p ? shortName(p.name) : ''}${e.own ? '(자책)' : ''} ${e.min}'`; }).join(', '))); } }
   // 선수를 골랐는데 보여 줄 패널이 없으면 두 번째 영역을 선수 카드로
-  if (S.selPid != null && L.lastSel !== S.selPid && !P.slice(0, 2).includes('player')) { P[1] = 'player'; const s2 = document.getElementById('mps1'); if (s2) s2.value = 'player'; }
+  if (S.selPid != null && L.lastSel !== S.selPid && M.pidList[S.selPid]) { const want = 'rate' + M.pidList[S.selPid].side; const vis = [0, 1, 2, 3].filter(i => { const e = document.getElementById('mpb' + i); return e && e.offsetParent !== null; }); if (!vis.some(i => P[i] === want)) { const i = vis.includes(1) ? 1 : vis[0]; if (i != null) { P[i] = want; const s2 = document.getElementById('mps' + i); if (s2) s2.value = want; } } L.pT = {}; }
   L.lastSel = S.selPid;
   for (let i = 0; i < 4; i++) {
     const body = document.getElementById('mpb' + i); if (!body || body.offsetParent === null) continue;
     const kind = P[i]; const key = i + kind; const every = PANEL_HEAVY[kind] ? 240 : 30;
-    if (L.pT[key] != null && sideT - L.pT[key] < every && !(kind === 'player' && L.pSel !== S.selPid)) continue;
+    if (L.pT[key] != null && sideT - L.pT[key] < every && !((kind === 'rate0' || kind === 'rate1') && L.pSel !== S.selPid)) continue;
     if (body.contains(document.activeElement) && document.activeElement.tagName === 'SELECT') continue;
     L.pT[key] = sideT; const st = body.scrollTop; body.innerHTML = ''; body.append(panelBody(kind, fr)); body.scrollTop = st;
   }
@@ -1559,22 +1639,25 @@ function playerCard(p) {
     h('div', { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2px 12px', marginTop: '6px', fontSize: '12.5px' } }, keys.map(k => h('div', { class: 'row', style: { justifyContent: 'space-between' } }, h('span', { class: 'muted' }, D.STAT_LABELS[k]), h('span', { class: 'num ' + ovrClass(p.s[k]) }, `${p.s[k]}`)))));
 }
 // 선수 히트맵 (공격 방향 → 오른쪽). 한 가지 색의 진하기로 머문 시간을 표시
+let HM_SEQ = 0;
+// 머문 위치를 번지는 열 덩어리로 표시: 낮음(초록) → 중간(노랑) → 높음(빨강)
 function heatmapSVG(hm, opts) {
   opts = opts || {}; const W = E.HM_W, H = E.HM_H; const NS = 'http://www.w3.org/2000/svg'; const el = (t, a) => { const e = document.createElementNS(NS, t); for (const k in a) e.setAttribute(k, a[k]); return e; };
+  const id = 'hmf' + (++HM_SEQ);
   const svg = el('svg', { viewBox: '0 0 105 68', class: 'heat', role: 'img', 'aria-label': opts.label || '히트맵 (공격 방향 오른쪽)' });
+  const defs = el('defs', {}); const f = el('filter', { id, x: '-10%', y: '-10%', width: '120%', height: '120%' }); f.append(el('feGaussianBlur', { stdDeviation: '2.6' })); const cp = el('clipPath', { id: id + 'c' }); cp.append(el('rect', { x: 0, y: 0, width: 105, height: 68 })); defs.append(f, cp); svg.append(defs);
   svg.append(el('rect', { x: 0, y: 0, width: 105, height: 68, class: 'hp' }));
   if (hm) {
-    // 3×3 가우시안으로 부드럽게
-    const g = new Float32Array(W * H); let mx = 0;
-    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { let v = 0, wsum = 0; for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const xx = x + dx, yy = y + dy; if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue; const w = (dx ? .5 : 1) * (dy ? .5 : 1); v += hm[yy * W + xx] * w; wsum += w; } g[y * W + x] = v / wsum; if (g[y * W + x] > mx) mx = g[y * W + x]; }
-    const cw = 105 / W, ch = 68 / H;
-    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const v = mx ? g[y * W + x] / mx : 0; if (v < .06) continue; svg.append(el('rect', { x: x * cw, y: (H - 1 - y) * ch, width: cw + .05, height: ch + .05, fill: '#ff7a3d', 'fill-opacity': (.12 + .78 * Math.pow(v, .8)).toFixed(2) })); }
+    let mx = 0; for (let i = 0; i < W * H; i++) if (hm[i] > mx) mx = hm[i];
+    const cw = 105 / W, ch = 68 / H; const wrap = el('g', { 'clip-path': `url(#${id}c)` }); const g = el('g', { filter: `url(#${id})` });
+    const ramp = v => v < .35 ? `hsl(${130 - v / .35 * 60},85%,48%)` : v < .7 ? `hsl(${70 - (v - .35) / .35 * 40},95%,52%)` : `hsl(${30 - (v - .7) / .3 * 30},95%,52%)`;
+    if (mx) for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const v = Math.pow(hm[y * W + x] / mx, .6); if (v < .08) continue; g.append(el('circle', { cx: (x + .5) * cw, cy: (H - 1 - y + .5) * ch, r: (2.6 + v * 2.6).toFixed(2), fill: ramp(v), 'fill-opacity': (.35 + .6 * v).toFixed(2) })); }
+    wrap.append(g); svg.append(wrap);
   }
-  // 경기장 선
   const ln = (d) => svg.append(el('path', { d, class: 'hl' }));
   ln('M52.5 0V68'); ln('M0 13.84H16.5V54.16H0'); ln('M105 13.84H88.5V54.16H105'); svg.append(el('circle', { cx: 52.5, cy: 34, r: 9.15, class: 'hl', fill: 'none' }));
   svg.append(el('rect', { x: .3, y: .3, width: 104.4, height: 67.4, class: 'hl', fill: 'none' }));
-  const ar = el('path', { d: 'M88 64h10m-3-2.5 3 2.5-3 2.5', class: 'harr' }); svg.append(ar);
+  svg.append(el('path', { d: 'M88 64h10m-3-2.5 3 2.5-3 2.5', class: 'harr' }));
   return svg;
 }
 function pct(a, b) { return b ? Math.round(a / b * 100) + '%' : '-'; }
@@ -1733,7 +1816,7 @@ function closeModal() { const ls = document.querySelectorAll('.modal.layer'); if
 function closeAllModals() { document.querySelectorAll('.modal').forEach(m => m.remove()); L.modal = false; }
 function openLiveTactics() {
   const sides = L.control; if (!sides.includes(S.tacSide)) S.tacSide = sides[0];
-  L.playing = false; buildCtrl();
+  L.playing = false; twFold(M.teams[S.tacSide]); buildCtrl();
   const lagSec = Math.max(0, (bufEnd() - L.ph) * FRAME_DT());
   const draw = () => {
     const T = M.teams[S.tacSide];

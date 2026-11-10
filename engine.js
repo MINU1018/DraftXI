@@ -1731,8 +1731,36 @@ function setKickoff(M, side, teleport, afterGoal) {
 }
 
 // ---------- AI 감독 ----------
+// AI 감독의 실시간 대응: 지난 구간에 드러난 약점(실점 위험 유형, 공격 부진, 점수 상황)을 보고 지침을 조금씩 고침
+function aiAdapt(M, T) {
+  const min = M.t / 60; if (min < 14 || (T.adT != null && M.t - T.adT < 540)) return; T.adT = M.t;
+  const tc = tac(T); const from = T.adI || 0; T.adI = M.shotLog.length; const seg = M.shotLog.slice(from);
+  const ag = seg.filter(x => x.s !== T.side), my = seg.filter(x => x.s === T.side); const xg = (a, o) => a.filter(x => !o || x.origin === o).reduce((v, x) => v + x.xg, 0);
+  const diff = M.score[T.side] - M.score[1 - T.side]; const say = t => ev(M, 'tactic', T.side, `${T.name} 벤치: ${t}`, { quiet: true }); let n = 0; const cap = 2;
+  const bump = (k, d, lo, hi) => { const v = clamp((tc[k] ?? 2) + d, lo, hi); if (v === tc[k]) return false; tc[k] = v; return true; };
+  if (n < cap && xg(ag, 'through') >= .32 && (bump('defLine', -1, 0, 4) | (tc.offsideTrap ? (tc.offsideTrap = false, 1) : 0))) { say('뒷공간이 뚫리자 수비 라인을 내립니다.'); n++; }
+  if (n < cap && xg(ag, 'cross') >= .3) { let ch = false; if (tc.trap === 'inside') { tc.trap = 'none'; ch = true; } const rd = T.setup.rolesD; if (rd) for (const p of active(T)) { const g = SLOT_GROUP[p.code]; if ((g === 'FB' || g === 'WB') && rd[p.slot] !== 'pfb') { rd[p.slot] = 'pfb'; ch = true; } } if (ch) { say('크로스를 계속 허용하자 측면 수비를 앞으로 붙입니다.'); n++; } }
+  if (n < cap && xg(ag, 'counter') >= .3) { let ch = bump('width', -1, 0, 3); if (tc.onLoss !== 'regroup' && tc.press < 2) { tc.onLoss = 'regroup'; ch = true; } else if (tc.onLoss === 'neutral') { tc.onLoss = 'counterpress'; ch = true; } if (ch) { say('역습에 흔들리자 공을 잃은 뒤의 대응을 바꿉니다.'); n++; } }
+  if (n < cap && ag.filter(x => x.origin === 'long').length >= 3 && bump('engage', 1, 0, 4)) { say('중거리 슈팅을 막으려 압박 기준선을 올립니다.'); n++; }
+  if (n < cap && xg(ag) >= .9 && diff >= 0 && bump('press', 1, 0, 3)) { say('밀리는 흐름을 끊으려 압박 강도를 높입니다.'); n++; }
+  // 공격이 막힐 때: 전개 방식을 바꿔 봄
+  if (n < cap && min > 25 && diff <= 0 && xg(my) < .15 && (T.adA || 0) < 3) { T.adA = (T.adA || 0) + 1;
+    const r = M.rng(); let t = '';
+    if (r < .34 && bump('tempo', 1, 0, 4)) t = '공격이 풀리지 않자 템포를 올립니다.';
+    else if (r < .67 && tc.width !== 3 && bump('width', 1, 0, 3)) t = '중앙이 막히자 공격 폭을 넓힙니다.';
+    else if (tc.finalThird !== 'shootOnSight') { tc.finalThird = tc.finalThird === 'workIn' ? 'mixed' : 'shootOnSight'; t = '슈팅 기회가 없자 더 과감한 마무리를 주문합니다.'; }
+    else if (bump('passing', tc.passing >= 2 ? -1 : 1, 0, 3)) t = '패스 길이를 바꿔 다른 길을 찾습니다.';
+    if (t) { say(t); n++; }
+  }
+  // 점수 상황: 앞서면 조금씩 잠그고, 뒤지면 조금씩 올림
+  const want = diff >= 2 && min > 55 ? -1 : diff === 1 && min > 68 ? -1 : diff < 0 && min > 50 ? 1 : 0; const cur = T.adM || 0;
+  if (n < cap && want !== cur && !T.aiPush && !T.aiHold) { const d = want - cur; bump('defLine', d, 0, 4); bump('engage', d, 0, 4); bump('tempo', d, 0, 4); if (want < 0) tc.waste = 2; else if (cur < 0) tc.waste = 1; T.adM = want;
+    const rd = T.setup.rolesD; if (rd && want > 0) for (const p of active(T)) if (SLOT_GROUP[p.code] === 'ST' && rd[p.slot] !== 'pfw') rd[p.slot] = 'pfw';
+    say(want < 0 ? '리드를 지키기 위해 라인을 조금 내리고 템포를 늦춥니다.' : want > 0 ? '동점을 노리고 라인과 템포를 올립니다.' : '다시 기본 운영으로 돌아갑니다.'); }
+}
 function aiManage(M, T) {
   if (M.phase !== 'dead' && M.phase !== 'goal') return;
+  aiAdapt(M, T);
   const min = M.t / 60; const tc = tac(T);
   if (T.subsLeft > 0 && min > 55 && (!T.lastAi || M.t - T.lastAi > 240)) {
     T.lastAi = M.t;

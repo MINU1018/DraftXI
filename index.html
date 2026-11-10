@@ -724,6 +724,20 @@ select, input[type=text], input[type=number], input[type=search], textarea { bor
 .mentbar button[aria-pressed="true"] { opacity: 1; box-shadow: 0 0 0 2px #fff inset; }
 @media (max-width: 700px) { .mentbar { grid-template-columns: repeat(4, 1fr); } }
 .tac { grid-template-columns: minmax(300px, 1fr) minmax(300px, 1.1fr); }
+
+/* 전술 조정 · 세부 스탯 · 선수 펼침 */
+.twchips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+.twchip { border: 1px solid var(--line); background: var(--panel2); color: var(--muted); border-radius: 999px; padding: 5px 11px; font-size: 12.5px; font-weight: 600; }
+.twchip:hover { color: var(--fg); border-color: var(--muted); }
+.twchip[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.mp.flash { animation: mpFlash .9s ease-out; } @keyframes mpFlash { 0% { box-shadow: 0 0 0 3px var(--accent); } 100% { box-shadow: 0 0 0 0 transparent; } }
+.pexp { display: grid; gap: 7px; padding: 9px 10px 11px; margin: 2px 0 6px; border-radius: 10px; background: var(--panel2); }
+.pexs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px 8px; } .pexs > div { display: flex; justify-content: space-between; gap: 6px; font-size: 12.5px; } .pexs .k { color: var(--muted); } .pexs b { font-size: 14px; }
+.ldr { display: grid; grid-template-columns: 74px 12px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 6px 9px; border-radius: 8px; background: var(--panel2); cursor: pointer; font-size: 13px; } .ldr:hover { background: var(--panel3); } .ldr .k { color: var(--muted); font-size: 12px; } .ldr .n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .ldr b { font-size: 16px; }
+.dx-table.ds td { padding: 5px 6px; } .dx-table.ds tr.dsx td { background: var(--panel); padding: 10px; white-space: normal; }
+.dsbox { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr); gap: 14px; align-items: start; max-width: 1000px; } @media (max-width: 800px) { .dsbox { grid-template-columns: 1fr; } }
+.slot.gone { opacity: .55; pointer-events: none; } .slot.gone .disc { background: #3a3f48; color: #9aa3b0; border-color: #5d6573; border-style: dashed; }
+.ctrlmore .cmbox { max-height: 76vh; overflow: auto; }
 </style></head>
 <body>
 <div class="app" id="app">
