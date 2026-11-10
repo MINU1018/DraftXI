@@ -18,36 +18,88 @@ function RNG(seed) {
 }
 
 // ---------- 역할 / 포메이션 ----------
+// 공 소유 시 역할(ROLES)과 공 미소유 시 역할(DROLES)을 자리마다 따로 고름.
+// g: 쓸 수 있는 포지션 그룹, d: 한 줄 설명, k: 주요 능력치, tr: 어울리는 플레이 성향. 나머지는 경기 엔진이 읽는 움직임·판단 계수
 const ROLES = {
-  gk: { n: '골키퍼', g: ['GK'] },
-  sk: { n: '스위퍼 키퍼', g: ['GK'], sweep: 1 },
-  cd: { n: '센터백', g: ['CB'] },
-  bpd: { n: '볼 플레잉 디펜더', g: ['CB'], risk: .5, carry: .3 },
-  stp: { n: '스토퍼', g: ['CB'], press: .6 },
-  fb: { n: '풀백', g: ['FB', 'WB'], fwd: .07 },
-  wb: { n: '윙백', g: ['FB', 'WB'], fwd: .2, cross: .5, wide: 1.05 },
-  ifb: { n: '인버티드 풀백', g: ['FB'], fwd: .03, inside: .5 },
-  cwb: { n: '컴플리트 윙백', g: ['WB', 'FB'], fwd: .28, cross: .6, drib: .4, wide: 1.08 },
-  dlp: { n: '딥라잉 플레이메이커', g: ['DM', 'CM'], pm: 1, risk: .5 },
-  bwm: { n: '볼위닝 미드필더', g: ['DM', 'CM'], press: .8 },
-  anc: { n: '앵커', g: ['DM'], hold: .07 },
-  cm: { n: '중앙 미드필더', g: ['CM', 'DM'] },
-  b2b: { n: '박스투박스', g: ['CM'], fwd: .12 },
-  mez: { n: '메짤라', g: ['CM'], fwd: .12, out: .3, drib: .4 },
-  ap: { n: '어드밴스드 플레이메이커', g: ['CM', 'AM', 'W'], pm: 1, risk: .6, roam: .3 },
-  am: { n: '공격형 미드필더', g: ['AM'], fwd: .05, shoot: .3 },
-  ss: { n: '섀도 스트라이커', g: ['AM'], fwd: .14, run: 1, shoot: .4 },
-  eng: { n: '엔간체', g: ['AM'], pm: 1, hold: .04, press: -.5 },
-  wng: { n: '윙어', g: ['W'], wide: 1.1, cross: .8, drib: .4 },
-  inf: { n: '인사이드 포워드', g: ['W'], inside: .45, shoot: .6, drib: .5, run: .6 },
-  inw: { n: '인버티드 윙어', g: ['W'], inside: .6, risk: .4, drib: .3 },
-  wm: { n: '와이드 미드필더', g: ['W'], wide: 1, hold: .04, press: .3 },
-  af: { n: '어드밴스드 포워드', g: ['ST'], run: 1, shoot: .3 },
-  tm: { n: '타깃맨', g: ['ST'], target: 1, hold: .03 },
-  f9: { n: '폴스 나인', g: ['ST'], drop: .14, pm: 1, risk: .4 },
-  poa: { n: '포쳐', g: ['ST'], run: 1, shoot: .6, press: -.6 },
-  pf: { n: '프레싱 포워드', g: ['ST'], press: .9 }
+  gk: { n: '골키퍼', g: ['GK'], d: '위험한 패스를 피하고 안정적으로 볼을 처리합니다.', k: ['gkHandling', 'gkPositioning', 'reactions'], tr: '위험한 패스 자제' },
+  bpg: { n: '볼 플레잉 골키퍼', g: ['GK'], gkd: 'short', d: '짧은 패스로 후방 빌드업의 출발점이 됩니다.', k: ['shortPass', 'ballControl', 'vision', 'gkKicking'], tr: '짧은 패스 위주 · 역습 시 빠른 스로인' },
+  nng: { n: '노 넌센스 골키퍼', g: ['GK'], gkd: 'long', d: '압박을 받으면 길게 걷어냅니다.', k: ['gkKicking', 'longPass', 'strength'], tr: '위험한 패스 자제 · 멀리 차내기' },
+  cd: { n: '중앙 수비수', g: ['CB'], d: '간결한 패스로 안정감을 줍니다.', k: ['shortPass', 'reactions', 'marking'] },
+  bpd: { n: '볼 플레잉 수비수', g: ['CB'], risk: .5, carry: .3, d: '전방 침투 패스를 넣고 빌드업을 주도합니다.', k: ['shortPass', 'longPass', 'vision', 'dribbling', 'ballControl'], tr: '긴 패스 시도 · 공을 몰고 전진' },
+  nnc: { n: '노 넌센스 센터백', g: ['CB'], risk: -.6, d: '빌드업을 생략하고 공을 멀리 걷어냅니다.', k: ['heading', 'jumping', 'strength'], tr: '위험한 패스 자제' },
+  wcb: { n: '와이드 센터백', g: ['CB'], wide: 1.35, fwd: .04, carry: .3, d: '3백에서 측면으로 넓게 벌려 빌드업과 오버래핑을 돕습니다.', k: ['crossing', 'dribbling', 'pace', 'stamina'], tr: '측면으로 빠져나감 · 공을 몰고 전진' },
+  lib: { n: '리베로', g: ['CB'], fwd: .12, carry: .4, risk: .4, d: '수비 라인에서 미드필드까지 전진해 수적 우위를 만듭니다.', k: ['shortPass', 'vision', 'stamina', 'reactions'], tr: '공을 몰고 전진 · 원투 패스 시도' },
+  ocb: { n: '오버래핑 센터백', g: ['CB'], fwd: .2, wide: 1.6, cross: .4, d: '측면을 따라 최전방까지 오버래핑합니다.', k: ['positioning', 'pace', 'stamina', 'crossing'], tr: '기회 될 때마다 전진' },
+  fb: { n: '풀백', g: ['FB', 'WB'], fwd: .07, d: '공격과 수비의 균형을 맞추는 안정적인 측면 수비수입니다.', k: ['shortPass', 'crossing', 'stamina', 'reactions'] },
+  wb: { n: '윙백', g: ['FB', 'WB'], fwd: .2, cross: .5, wide: 1.05, d: '터치라인을 따라 높게 전진해 측면 공격에 가담합니다.', k: ['crossing', 'dribbling', 'pace', 'stamina'], tr: '터치라인을 따라 돌파' },
+  cwb: { n: '완성형 윙백', g: ['WB', 'FB'], fwd: .28, cross: .6, drib: .4, wide: 1.08, d: '측면 공격을 주도하며 돌파와 크로스를 모두 맡습니다.', k: ['crossing', 'dribbling', 'pace', 'accel', 'stamina'], tr: '터치라인을 따라 돌파 · 기회 될 때마다 전진' },
+  awb: { n: '어드밴스드 윙백', g: ['WB', 'FB'], fwd: .36, cross: .7, drib: .5, wide: 1.1, d: '거의 윙어처럼 높은 위치에서 뜁니다.', k: ['crossing', 'dribbling', 'pace', 'accel', 'positioning'], tr: '기회 될 때마다 전진' },
+  ifb: { n: '인사이드 풀백', g: ['FB'], fwd: 0, hold: .02, inside: .6, d: '공격 시 중앙으로 좁혀 들어와 3백을 만듭니다.', k: ['shortPass', 'reactions', 'marking', 'interceptions'], tr: '중앙으로 파고듦' },
+  iwb: { n: '인버티드 윙백', g: ['FB', 'WB'], fwd: .13, inside: .6, risk: .2, d: '측면에서 중앙 미드필드로 들어와 중원 수적 우위를 돕습니다.', k: ['shortPass', 'vision', 'ballControl', 'positioning'], tr: '중앙으로 파고듦 · 짧은 패스 위주' },
+  pwb: { n: '플레이메이킹 윙백', g: ['WB', 'FB'], fwd: .16, inside: .25, pm: 1, risk: .5, d: '측면과 하프스페이스에서 창의적인 패스로 기회를 만듭니다.', k: ['vision', 'shortPass', 'agility', 'longPass'], tr: '킬패스 자주 시도' },
+  dm: { n: '수비형 미드필더', g: ['DM'], d: '후방에서 볼을 순환시키는 기본 역할입니다.', k: ['shortPass', 'reactions', 'interceptions'] },
+  dlp: { n: '딥라잉 플레이메이커', g: ['DM', 'CM'], pm: 1, risk: .5, d: '후방에서 넓은 시야와 패스로 템포를 조율합니다.', k: ['shortPass', 'longPass', 'vision', 'ballControl', 'reactions'], tr: '경기 템포 조절 · 긴 패스 시도' },
+  hb: { n: '하프백', g: ['DM'], hold: .05, split: 1, d: '빌드업 때 두 센터백 사이로 내려와 3백을 만듭니다.', k: ['shortPass', 'reactions', 'marking', 'interceptions'], tr: '공을 받으러 깊숙이 내려옴' },
+  anc: { n: '앵커', g: ['DM'], hold: .07, risk: -.3, d: '위치를 고수하며 후방의 안전한 패스 선택지가 됩니다.', k: ['reactions', 'shortPass', 'marking'], tr: '위험한 패스 자제 · 짧은 패스 위주' },
+  reg: { n: '레지스타', g: ['DM'], pm: 1, risk: .7, roam: .25, d: '후방에서 자유롭게 움직이며 공격적인 패스로 경기를 지배합니다.', k: ['agility', 'vision', 'shortPass', 'longPass', 'positioning'], tr: '킬패스 자주 시도 · 공을 받으러 내려옴' },
+  rpm: { n: '로밍 플레이메이커', g: ['DM', 'CM'], pm: 1, roam: .35, carry: .4, fwd: .06, d: '경기장 전역을 누비며 공을 받고 전진시킵니다.', k: ['stamina', 'positioning', 'shortPass', 'dribbling'], tr: '공을 몰고 전진' },
+  vol: { n: '세군도 볼란테', g: ['DM'], fwd: .17, shoot: .3, d: '수비형 미드필더 자리에서 박스 안까지 늦게 침투합니다.', k: ['positioning', 'stamina', 'finishing', 'longShots', 'shortPass'], tr: '페널티 박스 안으로 침투' },
+  cm: { n: '중앙 미드필더', g: ['CM'], d: '패스와 침투를 균형 있게 수행합니다.', k: ['shortPass', 'ballControl', 'reactions', 'stamina'] },
+  b2b: { n: '박스 투 박스 미드필더', g: ['CM'], fwd: .12, shoot: .2, d: '빌드업부터 박스 침투까지 넓게 뜁니다.', k: ['stamina', 'positioning', 'shortPass', 'finishing', 'standTackle'], tr: '페널티 박스 안으로 침투' },
+  mp: { n: '미드필드 플레이메이커', g: ['CM'], pm: 1, risk: .5, d: '중원에서 결정적인 패스를 찔러줍니다.', k: ['vision', 'shortPass', 'ballControl', 'agility'], tr: '킬패스 자주 시도' },
+  ap: { n: '어드밴스드 플레이메이커', g: ['CM', 'AM'], pm: 1, risk: .6, roam: .3, fwd: .04, d: '상대 수비와 미드필드 사이에서 공격을 지휘합니다.', k: ['vision', 'shortPass', 'agility', 'ballControl', 'reactions'], tr: '킬패스 자주 시도 · 원투 패스 시도' },
+  mez: { n: '채널 미드필더', g: ['CM', 'AM'], fwd: .12, out: .3, drib: .4, d: '풀백과 센터백 사이 하프스페이스로 빠져나갑니다.', k: ['positioning', 'dribbling', 'accel', 'shortPass', 'longShots'], tr: '측면으로 빠져나감 · 기회 될 때마다 전진' },
+  car: { n: '카릴레로', g: ['CM'], out: .22, hold: .02, d: '중원과 측면 사이를 오가며 측면 오버래핑의 빈자리를 메웁니다.', k: ['stamina', 'shortPass', 'reactions', 'interceptions'] },
+  am: { n: '공격형 미드필더', g: ['AM'], fwd: .05, shoot: .3, d: '최전방과 중원 사이에서 패스 연계와 중거리 슈팅을 맡습니다.', k: ['shortPass', 'longShots', 'ballControl', 'reactions'] },
+  ss: { n: '섀도 스트라이커', g: ['AM'], fwd: .14, run: 1, shoot: .4, d: '공격수 뒤에서 박스 안으로 쇄도해 득점을 노립니다.', k: ['finishing', 'positioning', 'accel', 'reactions', 'ballControl'], tr: '페널티 박스 안으로 침투 · 오프사이드 트랩 깨기' },
+  fr: { n: '프리 롤', g: ['AM'], roam: .45, pm: 1, risk: .6, drib: .4, d: '공격 진영 전역을 자유롭게 누비며 창의성을 발휘합니다.', k: ['agility', 'vision', 'positioning', 'dribbling'], tr: '빈 공간으로 이동 · 킬패스 자주 시도' },
+  wng: { n: '윙어', g: ['W'], wide: 1.1, cross: .8, drib: .4, d: '터치라인을 따라 돌파한 뒤 크로스를 올립니다.', k: ['pace', 'accel', 'dribbling', 'crossing'], tr: '터치라인을 따라 돌파 · 크로스 자주 시도' },
+  inw: { n: '인버티드 윙어', g: ['W'], inside: .6, risk: .4, drib: .3, d: '측면에서 중앙으로 치고 들어오며 패스와 슈팅을 연계합니다.', k: ['dribbling', 'shortPass', 'vision', 'accel', 'longShots'], tr: '안쪽으로 파고듦 (반대발 추천)' },
+  inf: { n: '인사이드 포워드', g: ['W'], inside: .45, shoot: .6, drib: .5, run: .6, d: '대각선으로 박스 안을 파고들어 직접 득점을 노립니다.', k: ['finishing', 'positioning', 'dribbling', 'accel', 'reactions'], tr: '안쪽으로 파고듦 · 페널티 박스 안으로 침투' },
+  wp: { n: '와이드 플레이메이커', g: ['W'], pm: 1, inside: .5, risk: .5, d: '측면에서 중앙으로 좁혀 들어와 경기를 조율합니다.', k: ['vision', 'shortPass', 'agility', 'ballControl'], tr: '킬패스 자주 시도 · 중앙으로 파고듦' },
+  wtf: { n: '와이드 타깃 포워드', g: ['W'], target: 1, hold: .02, d: '측면에서 공중볼을 따내고 공을 지켜 연계합니다.', k: ['jumping', 'heading', 'strength', 'balance'], tr: '등지고 공을 지킴' },
+  raum: { n: '라움도이터', g: ['W'], run: 1, inside: .35, shoot: .5, roam: .2, d: '수비의 빈 공간을 찾아 침투해 득점 기회를 잡습니다.', k: ['positioning', 'interceptions', 'finishing', 'reactions'], tr: '오프사이드 트랩 깨기 · 페널티 박스 안으로 침투' },
+  af: { n: '어드밴스드 포워드', g: ['ST'], run: 1, shoot: .3, d: '최전방에서 뒷공간을 침투하며 공격의 선봉에 섭니다.', k: ['pace', 'accel', 'finishing', 'positioning', 'dribbling'], tr: '오프사이드 트랩 깨기' },
+  cf: { n: '컴플리트 포워드', g: ['ST'], shoot: .3, target: .5, drop: .04, d: '피지컬·기술·연계·마무리를 모두 갖춘 올라운드 공격수입니다.', k: ['finishing', 'heading', 'dribbling', 'shortPass', 'strength', 'positioning'] },
+  tm: { n: '타깃 포워드', g: ['ST'], target: 1, hold: .03, d: '피지컬과 제공권으로 공을 지켜내고 동료에게 연결합니다.', k: ['jumping', 'heading', 'strength', 'balance'], tr: '등지고 공을 지킴 · 공중볼 경합 선호' },
+  dlf: { n: '딥라잉 포워드', g: ['ST'], drop: .1, pm: 1, risk: .2, d: '미드필드로 내려와 공을 받아주고 2선 침투를 돕습니다.', k: ['shortPass', 'vision', 'ballControl', 'strength'], tr: '공을 받으러 깊숙이 내려옴 · 원투 패스 시도' },
+  poa: { n: '포처', g: ['ST'], run: 1, shoot: .6, d: '박스 안에서 오프사이드 라인을 깨뜨리며 마무리에만 집중합니다.', k: ['finishing', 'positioning', 'reactions', 'accel'], tr: '오프사이드 트랩 깨기 · 원터치 슛 선호' },
+  f9: { n: '폴스 나인', g: ['ST'], drop: .14, pm: 1, risk: .4, d: '깊숙이 내려와 센터백을 끌어내고 2선 공간과 킬패스를 만듭니다.', k: ['vision', 'shortPass', 'dribbling', 'agility', 'reactions'], tr: '공을 받으러 깊숙이 내려옴 · 킬패스 자주 시도' },
+  chf: { n: '채널 포워드', g: ['ST'], run: 1, out: .4, d: '중앙과 측면 사이 채널로 빠져나가 수비 간격을 벌립니다.', k: ['positioning', 'pace', 'accel', 'dribbling', 'crossing'], tr: '측면으로 빠져나감' },
+  // 이전 버전 저장 파일 호환용 (목록에는 나오지 않음)
+  sk: { n: '스위퍼 키퍼', g: ['GK'], sweep: 1, old: ['gk', 'swk'] }, stp: { n: '스토퍼', g: ['CB'], press: .6, old: ['cd', 'stc'] }, bwm: { n: '볼위닝 미드필더', g: ['DM', 'CM'], press: .8, old: ['cm', 'pcm'] },
+  eng: { n: '엔간체', g: ['AM'], pm: 1, hold: .04, press: -.5, old: ['ap', 'oam'] }, wm: { n: '와이드 미드필더', g: ['W'], wide: 1, hold: .04, press: .3, old: ['wng', 'tw'] }, pf: { n: '프레싱 포워드', g: ['ST'], press: .9, old: ['af', 'pfw'] }
 };
+// 공 미소유 시 역할. press: 압박 적극성, up/back: 블록보다 앞/뒤에 머무는 정도, wcov: 공 쪽 측면으로 쏠려 커버, line: 수비 라인까지 내려옴, split: 측면으로 벌려 대기
+const DROLES = {
+  lhg: { n: '라인 홀딩 골키퍼', g: ['GK'], sweep: 0, d: '골문 안을 지키는 정통 스타일입니다.', k: ['gkReflexes', 'gkDiving', 'gkPositioning'] },
+  swk: { n: '스위퍼 키퍼', g: ['GK'], sweep: 1, d: '수비 뒷공간을 적극적으로 커버합니다.', k: ['reactions', 'pace', 'accel', 'gkPositioning'], tr: '골문을 자주 비움' },
+  cbd: { n: '센터백', g: ['CB'], d: '수비 라인을 지키며 자기 구역을 맡습니다.', k: ['marking', 'standTackle', 'heading'] },
+  stc: { n: '스토핑 센터백', g: ['CB'], press: .6, up: .015, d: '라인 앞으로 튀어나가 상대 공격수를 강하게 저지합니다.', k: ['aggression', 'standTackle', 'strength', 'slideTackle'], tr: '태클 시 몸을 날림' },
+  cvc: { n: '커버링 센터백', g: ['CB'], back: .025, press: -.3, d: '수비 라인 뒤 공간을 지키며 스루패스를 차단합니다.', k: ['pace', 'accel', 'interceptions', 'marking'], tr: '태클 시 서서 버팀' },
+  hfb: { n: '홀딩 풀백', g: ['FB', 'WB'], press: -.2, d: '전진을 자제하고 수비 간격을 유지하며 측면을 지킵니다.', k: ['marking', 'interceptions', 'reactions'] },
+  pfb: { n: '프레싱 풀백', g: ['FB', 'WB'], press: .6, up: .03, d: '높은 위치부터 상대 측면 자원을 강하게 압박합니다.', k: ['aggression', 'stamina', 'standTackle', 'accel'], tr: '상대를 강하게 압박' },
+  twb: { n: '트래킹 윙백', g: ['WB', 'FB'], back: .05, d: '자기 진영 깊숙이 복귀해 측면 수비에 가담합니다.', k: ['stamina', 'interceptions', 'pace'] },
+  sdm: { n: '스크리닝 수비형 미드필더', g: ['DM'], press: -.3, d: '위치를 지키며 패스 길목을 막고 수비진을 보호합니다.', k: ['marking', 'interceptions', 'reactions'] },
+  pdm: { n: '프레싱 수비형 미드필더', g: ['DM'], press: .8, d: '중원에서 상대를 강하게 압박해 공을 빼앗습니다.', k: ['standTackle', 'aggression', 'stamina'], tr: '상대를 강하게 압박' },
+  wdm: { n: '와이드 커버링 수비형 미드필더', g: ['DM'], wcov: .3, d: '풀백이 전진해 비운 측면 공간을 메웁니다.', k: ['pace', 'stamina', 'interceptions'] },
+  ddm: { n: '드로핑 수비형 미드필더', g: ['DM'], line: 1, press: -.3, d: '센터백 라인으로 내려와 수비 숫자를 늘립니다.', k: ['heading', 'jumping', 'marking'] },
+  scm: { n: '스크리닝 중앙 미드필더', g: ['CM'], press: -.2, d: '중원 간격을 유지하며 패스 경로를 차단합니다.', k: ['interceptions', 'marking', 'reactions'] },
+  pcm: { n: '프레싱 중앙 미드필더', g: ['CM'], press: .8, d: '공 가진 상대를 집요하게 추격합니다.', k: ['stamina', 'aggression', 'standTackle'] },
+  wcm: { n: '와이드 커버링 중앙 미드필더', g: ['CM'], wcov: .3, d: '측면 수비 뒷공간을 커버합니다.', k: ['stamina', 'pace', 'interceptions'] },
+  tw: { n: '트래킹 윙어', g: ['W'], back: .1, d: '자기 진영 깊숙이 복귀해 풀백을 돕습니다.', k: ['stamina', 'marking', 'interceptions'] },
+  pw: { n: '프레싱 윙어', g: ['W'], press: .7, up: .03, d: '상대 풀백과 센터백의 빌드업을 전방에서 압박합니다.', k: ['aggression', 'stamina', 'accel'] },
+  ow: { n: '와이드 아웃렛 윙어', g: ['W'], up: .15, press: -.6, d: '수비 가담을 줄이고 전방 측면에 남아 역습 경로가 됩니다.', k: ['pace', 'accel', 'positioning'], tr: '역습 시 전방 대기' },
+  iow: { n: '인사이드 아웃렛 윙어', g: ['W'], up: .15, press: -.6, narrow: .5, d: '수비 가담을 줄이고 전방 중앙 쪽에 남아 역습을 기다립니다.', k: ['pace', 'accel', 'positioning', 'finishing'], tr: '역습 시 전방 대기' },
+  tam: { n: '트래킹 공격형 미드필더', g: ['AM'], back: .08, d: '중원까지 내려와 미드필드 수 싸움에 가담합니다.', k: ['stamina', 'interceptions', 'reactions'] },
+  pam: { n: '프레싱 공격형 미드필더', g: ['AM'], press: .7, d: '상대 수비형 미드필더를 집중적으로 압박합니다.', k: ['aggression', 'stamina', 'interceptions'] },
+  oam: { n: '중앙 아웃렛 공격형 미드필더', g: ['AM'], up: .12, press: -.6, d: '전방 중앙에 머물며 역습 때 볼을 배급합니다.', k: ['vision', 'shortPass', 'pace', 'positioning'] },
+  tcf: { n: '트래킹 센터 포워드', g: ['ST'], back: .08, d: '중원 라인까지 내려와 수비 블록을 만듭니다.', k: ['stamina', 'reactions', 'interceptions'] },
+  pfw: { n: '프레싱 포워드', g: ['ST'], press: .9, d: '최전방에서 상대 센터백과 골키퍼를 쉴 새 없이 압박합니다.', k: ['aggression', 'stamina', 'accel'], tr: '상대를 강하게 압박' },
+  cof: { n: '중앙 아웃렛 포워드', g: ['ST'], up: .04, press: -.7, d: '최전방 중앙에 남아 역습 때 긴 패스를 받아 마무리합니다.', k: ['pace', 'accel', 'positioning', 'finishing'] },
+  sof: { n: '측면 아웃렛 포워드', g: ['ST'], up: .04, press: -.7, split: .4, d: '풀백과 센터백 사이로 벌려 서서 역습 때 뒷공간을 노립니다.', k: ['pace', 'accel', 'dribbling', 'positioning'], tr: '측면으로 빠져나감' }
+};
+const DEFAULT_DROLE = { GK: 'lhg', CB: 'cbd', FB: 'hfb', WB: 'twb', DM: 'sdm', CM: 'scm', W: 'tw', AM: 'tam', ST: 'tcf' };
 const SLOT_GROUP = { GK: 'GK', CB: 'CB', LB: 'FB', RB: 'FB', LWB: 'WB', RWB: 'WB', DM: 'DM', CM: 'CM', AM: 'AM', LM: 'W', RM: 'W', LW: 'W', RW: 'W', ST: 'ST' };
 const FORMATIONS = {
   '4-4-2': [['GK', .03, 0, 'gk'], ['LB', .22, -.8, 'fb'], ['CB', .18, -.28, 'cd'], ['CB', .18, .28, 'cd'], ['RB', .22, .8, 'fb'], ['LM', .5, -.8, 'wm'], ['CM', .45, -.22, 'b2b'], ['CM', .45, .22, 'cm'], ['RM', .5, .8, 'wng'], ['ST', .8, -.18, 'af'], ['ST', .8, .18, 'tm']],
@@ -59,7 +111,33 @@ const FORMATIONS = {
   '3-4-3': [['GK', .03, 0, 'gk'], ['CB', .18, -.48, 'cd'], ['CB', .16, 0, 'cd'], ['CB', .18, .48, 'cd'], ['LWB', .46, -.86, 'wb'], ['CM', .44, -.22, 'b2b'], ['CM', .44, .22, 'dlp'], ['RWB', .46, .86, 'wb'], ['LW', .76, -.6, 'inf'], ['ST', .84, 0, 'af'], ['RW', .76, .6, 'inf']],
   '5-3-2': [['GK', .03, 0, 'gk'], ['LWB', .27, -.86, 'wb'], ['CB', .18, -.45, 'cd'], ['CB', .16, 0, 'cd'], ['CB', .18, .45, 'cd'], ['RWB', .27, .86, 'wb'], ['CM', .46, -.36, 'b2b'], ['DM', .4, 0, 'anc'], ['CM', .46, .36, 'cm'], ['ST', .8, -.18, 'af'], ['ST', .8, .18, 'tm']]
 };
-function rolesForSlot(code) { const g = SLOT_GROUP[code]; return Object.keys(ROLES).filter(k => ROLES[k].g.includes(g)); }
+function rolesForSlot(code) { const g = SLOT_GROUP[code]; return Object.keys(ROLES).filter(k => !ROLES[k].old && ROLES[k].g.includes(g)); }
+function drolesForSlot(code) { const g = SLOT_GROUP[code]; return Object.keys(DROLES).filter(k => DROLES[k].g.includes(g)); }
+// 역할의 주요 능력치 평균 (추천 표시·AI 선택용)
+function roleScore(d, R) { if (!d || !R || !R.k) return 0; let v = 0; for (const k of R.k) v += statOf(d, k); return v / R.k.length; }
+// 공 미소유 시 배치: 없으면 공 소유 시 배치와 같음
+function oopSlotsOf(setup) { return setup && setup.slotsOop && setup.slotsOop.length === 11 ? setup.slotsOop : slotsOf(setup); }
+// 공 소유 시 배치의 각 선수를 미소유 포메이션의 가장 가까운 자리에 배정
+function oopFrom(setup, name) {
+  const ip = slotsOf(setup), pre = FORMATIONS[name]; if (!pre) return null; const out = new Array(11); const pairs = [];
+  ip.forEach((a, i) => pre.forEach((b, j) => { if ((a[0] === 'GK') !== (b[0] === 'GK')) return; pairs.push([Math.hypot((a[1] - b[1]) * 1.5, (a[2] - b[2]) * .6), i, j]); }));
+  pairs.sort((x, y) => x[0] - y[0]); const ui = new Set(), uj = new Set();
+  for (const [, i, j] of pairs) { if (ui.has(i) || uj.has(j)) continue; out[i] = [pre[j][0], pre[j][1], pre[j][2]]; ui.add(i); uj.add(j); }
+  for (let i = 0; i < 11; i++) if (!out[i]) out[i] = [ip[i][0], ip[i][1], ip[i][2]];
+  return out;
+}
+// 역할 점검: 이전 버전 역할 이름을 새 체계로 옮기고, 자리에 맞지 않는 역할은 기본값으로
+function normRoles(setup) {
+  const sl = slotsOf(setup), ol = oopSlotsOf(setup); setup.roles = setup.roles || []; const had = Array.isArray(setup.rolesD); setup.rolesD = had ? setup.rolesD : [];
+  for (let i = 0; i < 11; i++) {
+    const r = ROLES[setup.roles[i]]; let dk = setup.rolesD[i];
+    if (r && r.old) { const g = SLOT_GROUP[sl[i][0]]; setup.roles[i] = r.old[0] === 'cm' && g === 'DM' ? 'dm' : r.old[0]; if (!dk) dk = r.old[1] === 'pcm' && SLOT_GROUP[ol[i][0]] === 'DM' ? 'pdm' : r.old[1]; }
+    if (!rolesForSlot(sl[i][0]).includes(setup.roles[i])) setup.roles[i] = DEFAULT_ROLE[sl[i][0]] || rolesForSlot(sl[i][0])[0];
+    if (!drolesForSlot(ol[i][0]).includes(dk)) dk = DEFAULT_DROLE[SLOT_GROUP[ol[i][0]]];
+    setup.rolesD[i] = dk;
+  }
+  return setup;
+}
 function posGroup(pos) { return pos === 'LB' || pos === 'RB' ? 'FB' : pos === 'LW' || pos === 'RW' ? 'W' : pos; }
 const REL = { CB: { DM: .9, FB: .92 }, FB: { WB: 1, W: .88, CB: .9, DM: .82 }, DM: { CM: .96, CB: .9, FB: .82 }, CM: { DM: .96, AM: .95, W: .85 }, AM: { CM: .95, W: .92, ST: .9 }, W: { AM: .92, ST: .9, FB: .85, WB: .9 }, ST: { AM: .9, W: .9 } };
 function familiarity(pos, slotCode) {
@@ -146,7 +224,7 @@ function famOf(d, code) {
 }
 // 사용자 지정 위치(setup.slots)가 있으면 그것을, 없으면 프리셋 포메이션
 function slotsOf(setup) { return (setup && setup.slots && setup.slots.length === 11) ? setup.slots : (FORMATIONS[setup && setup.formation] || FORMATIONS['4-3-3']); }
-const DEFAULT_ROLE = { GK: 'gk', CB: 'cd', LB: 'fb', RB: 'fb', LWB: 'wb', RWB: 'wb', DM: 'anc', CM: 'cm', LM: 'wm', RM: 'wm', AM: 'am', LW: 'inf', RW: 'wng', ST: 'af' };
+const DEFAULT_ROLE = { GK: 'gk', CB: 'cd', LB: 'fb', RB: 'fb', LWB: 'wb', RWB: 'wb', DM: 'dm', CM: 'cm', LM: 'wng', RM: 'wng', AM: 'am', LW: 'inf', RW: 'wng', ST: 'af' };
 // 위치 좌표(깊이 y 0~1, 폭 x -1~1)로 포지션 코드 결정
 function codeAt(y, x) {
   const w = Math.abs(x) > .55, L = x < 0;
@@ -212,13 +290,13 @@ function makeSetup(team, formation) {
   const byId = id => team.players.find(p => p.id === id);
   const lp = lineup.map(byId);
   const best = (key) => lp.filter(p => p && p.pos !== 'GK').sort((a, b) => b.stats[key] - a.stats[key])[0];
-  return {
+  return normRoles({
     teamId: team.id, formation, lineup, bench,
     roles: FORMATIONS[formation].map(s => s[3]), instr: FORMATIONS[formation].map(() => DEFAULT_INSTR()),
     tactics: DEFAULT_TACTICS(),
     captain: lp.slice().sort((a, b) => b.ovr - a.ovr)[0].id,
     takers: { pen: best('penalties').id, fk: best('freeKick').id, corner: best('crossing').id }
-  };
+  });
 }
 
 // ---------- 매치 생성 ----------
@@ -334,6 +412,8 @@ function applyTalk(M, T, kind) {
   return out;
 }
 const role = p => ROLES[p.team.setup.roles[p.slot]] || {};
+const NOROLE = {};
+const roleD = p => { const rd = p.team.setup.rolesD; return (rd && DROLES[rd[p.slot]]) || NOROLE; };
 const instr = p => p.team.setup.instr[p.slot] || DEFAULT_INSTR();
 const tac = T => T.setup.tactics;
 const opp = (M, T) => M.teams[1 - T.side];
@@ -648,11 +728,11 @@ function computeTargets(M) {
       front = clamp(Math.min(eng, back + .44, bx + .14), back + .17, .82);
       wf = .7;
     }
-    const slots = slotsOf(T.setup);
+    const slots = inPoss ? slotsOf(T.setup) : oopSlotsOf(T.setup);
     const ol = offsideLine(M, T);
     const carrier = b.owner;
     // 라볼피아나: 빌드업 때 DM이 센터백 사이로 내려오면 센터백은 넓게 벌림
-    const splitDM = inPoss && bx < .5 ? active(T).find(q => SLOT_GROUP[q.code] === 'DM' && iv(q, 'split')) : null;
+    const splitDM = inPoss && bx < .5 ? active(T).find(q => SLOT_GROUP[q.code] === 'DM' && (iv(q, 'split') || role(q).split)) : null;
     for (const p of active(T)) {
       if (p === b.owner) continue;
       const sl = slots[p.slot]; const ro = role(p); const g0 = SLOT_GROUP[sl[0]];
@@ -675,8 +755,12 @@ function computeTargets(M) {
           x += p.roamX; y += p.roamY;
         }
       } else {
-        y = y * wf + by * .35;
+        const rd = roleD(p);
+        y = y * wf * (rd.narrow ? 1 - rd.narrow : 1) + by * (.35 + (rd.wcov || 0));
+        if (rd.split) y += (Math.sign(y) || (p.slot % 2 ? 1 : -1)) * rd.split;
+        x += (rd.up || 0) - (rd.back || 0);
         if (ro.hold) x -= ro.hold * .5;
+        if (rd.line) x = Math.min(x, back + .02);
       }
       x = clamp(x, .03, .97); y = clamp(y, -.96, .96);
       let px = wX(T, x), py = wY(T, y);
@@ -760,7 +844,7 @@ function computeTargets(M) {
 }
 function gkTarget(M, p) {
   const T = p.team, b = M.ball, gx = -T.dir * HL; const d = hyp(b.x - gx, b.y);
-  const sweep = role(p).sweep || p.tf.sk ? 1 : 0;
+  const rdk = roleD(p); const sweep = rdk.sweep != null ? rdk.sweep : (role(p).sweep || p.tf.sk ? 1 : 0);
   let depth = d > 35 ? 5 + sweep * 8 + tac(T).defLine : d < 18 ? clamp(d * .38, 1.5, 7) : 1 + Math.min(4.5, d * .11);
   const ang = Math.atan2(b.y, b.x - gx);
   const err = (100 - E(p, 'gkPositioning')) * .028 * Math.sin(M.t * .7 + p.pid);
@@ -784,7 +868,7 @@ function assignPress(M, T, counterpress, regroup) {
   const nPress = regroup ? 1 : counterpress ? 3 : [1, 1, 2, 2][tc.press];
   const range = regroup ? 6 : counterpress ? 22 : [9, 15, 20, 26][tc.press];
   const cand = active(T).filter(p => p.code !== 'GK').map(p => {
-    let d = hyp(p.x - c.x, p.y - c.y); d -= (instr(p).press + (role(p).press || 0)) * 4; return [p, d];
+    let d = hyp(p.x - c.x, p.y - c.y); d -= (instr(p).press + (role(p).press || 0) + (roleD(p).press || 0)) * 4; return [p, d];
   }).sort((a, b2) => a[1] - b2[1]);
   // 기본 수비: 골문 쪽에 선 가장 가까운 수비수가 볼 보유자를 막아섬 (압박 설정과 무관)
   if (bxt < .62) {
@@ -1068,7 +1152,7 @@ function gkDistribute(M, p) {
   const outfield = active(T).filter(q => q !== p);
   // 개인 지침(배급 방식·대상·패스 길이)이 있으면 팀 지침보다 우선
   const pm = iv(p, 'gkMethod'), pt = iv(p, 'gkTarget'), pl = iv(p, 'plen');
-  let method = pm !== 'team' ? pm : tc.gkMethod;
+  const gkd = role(p).gkd; let method = pm !== 'team' ? pm : gkd === 'short' && tc.gkMethod !== 'kick' ? r.pick(['roll', 'roll', 'pass', 'throw']) : gkd === 'long' ? 'kick' : tc.gkMethod;
   if (method === 'mixed') method = r.pick(pl < 0 ? ['roll', 'roll', 'throw', 'pass'] : pl > 0 ? ['kick', 'kick', 'kick', 'throw'] : tc.buildUp ? ['roll', 'roll', 'throw', 'kick'] : ['kick', 'kick', 'throw']);
   const grp = q => SLOT_GROUP[q.code];
   const tgt = pt !== 'team' ? pt : tc.gkTarget;
@@ -1680,7 +1764,7 @@ function substitute(M, T, outP, inD) {
 }
 // 포메이션 변경 시 슬롯 유지
 function changeFormation(M, T, formation, newRoles) {
-  T.setup.formation = formation; delete T.setup.slots; T.setup.roles = newRoles || FORMATIONS[formation].map(s => s[3]);
+  T.setup.formation = formation; delete T.setup.slots; delete T.setup.slotsOop; delete T.setup.rolesD; T.setup.roles = newRoles || FORMATIONS[formation].map(s => s[3]);
   for (const p of T.players) { const sl = FORMATIONS[formation][p.slot]; p.code = sl[0]; p.fam = famOf(p.d, sl[0]); }
 }
 function swapSlots(M, T, a, b) {
@@ -1848,5 +1932,5 @@ function applyOp(M, o) {
 function replayToEnd(M, ops, onChunk) { let i = 0; ops = ops || []; let guard = 0; while (!M.ended && guard++ < 90000) { while (i < ops.length && ops[i].t <= M.tick) applyOp(M, ops[i++]); M.halftimePause = false; step(M); } }
 function simulateToEnd(M) { let guard = 0; while (!M.ended && guard++ < 80000) step(M); }
 
-G.FMEngine = { WEATHER, PITCH, wxOf, HM_W, HM_H, PI_ALLOWED, applyOp, replayToEnd, summary, ratingOf, _t: { sampleShot: (...a) => sampleShot(...a), shotParams: (...a) => shotParams(...a), RNG }, DT, HL, HW, GW, GH, BR, ROLES, FORMATIONS, SLOT_GROUP, DEFAULT_TACTICS, DEFAULT_INSTR, rolesForSlot, familiarity, famOf, famLevel, posRating, rawRating, penArr, penOf, basePen, levelOfPen, PF_CODES, PFI, allRatings, archsOf, CODE_T, recoverPerDay, fatigue, formRoll, TALKS, applyTalk, SLOT_POS, slotsOf, codeAt, formLabel, refreshCodes, DEFAULT_ROLE, makeSetup, autoPick, createMatch, step, simulateToEnd, substitute, changeFormation, swapSlots, readFrame, liveFrame, finalizeRatings, E, active, minute };
+G.FMEngine = { DROLES, DEFAULT_DROLE, drolesForSlot, roleScore, oopSlotsOf, oopFrom, normRoles, WEATHER, PITCH, wxOf, HM_W, HM_H, PI_ALLOWED, applyOp, replayToEnd, summary, ratingOf, _t: { sampleShot: (...a) => sampleShot(...a), shotParams: (...a) => shotParams(...a), RNG }, DT, HL, HW, GW, GH, BR, ROLES, FORMATIONS, SLOT_GROUP, DEFAULT_TACTICS, DEFAULT_INSTR, rolesForSlot, familiarity, famOf, famLevel, posRating, rawRating, penArr, penOf, basePen, levelOfPen, PF_CODES, PFI, allRatings, archsOf, CODE_T, recoverPerDay, fatigue, formRoll, TALKS, applyTalk, SLOT_POS, slotsOf, codeAt, formLabel, refreshCodes, DEFAULT_ROLE, makeSetup, autoPick, createMatch, step, simulateToEnd, substitute, changeFormation, swapSlots, readFrame, liveFrame, finalizeRatings, E, active, minute };
 })(typeof window !== 'undefined' ? window : globalThis);

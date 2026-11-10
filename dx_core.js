@@ -217,14 +217,24 @@ function xiValue(players, slots) {
   for (const [v, i, p] of pairs) { if (res[i] || used.has(p.id)) continue; res[i] = v; used.add(p.id); if (++n === slots.length) break; }
   let sum = 0; for (const v of res) sum += v || 38; return sum;
 }
-function bestRole(p, code) { const ok = E.rolesForSlot(code); const m = {}; for (const a of E.archsOf(p, code)) if (ok.includes(a.role) && (m[a.role] == null || a.v > m[a.role])) m[a.role] = a.v; const b = Object.entries(m).sort((a, b) => b[1] - a[1])[0]; return b ? b[0] : (E.DEFAULT_ROLE[code] || ok[0]); }
+// 선수에게 가장 잘 맞는 역할: 그 역할의 주요 능력치 평균이 가장 높은 것
+function bestRole(p, code) { const ks = E.rolesForSlot(code); let b = ks[0], bv = -1; for (const k of ks) { const v = E.roleScore(p, E.ROLES[k]) + (k === E.DEFAULT_ROLE[code] ? .5 : 0); if (v > bv) { bv = v; b = k; } } return b; }
+function bestDRole(p, code) { const ks = E.drolesForSlot(code); let b = ks[0], bv = -1; for (const k of ks) { const v = E.roleScore(p, E.DROLES[k]); if (v > bv) { bv = v; b = k; } } return b; }
+// AI 감독의 미소유 시 역할: 스타일에 따라 압박형 / 버티기형 / 역습 대기형
+const OOP_BY = { press: { GK: 'swk', CB: 'stc', FB: 'pfb', WB: 'pfb', DM: 'pdm', CM: 'pcm', W: 'pw', AM: 'pam', ST: 'pfw' }, hold: { GK: 'lhg', CB: 'cvc', FB: 'hfb', WB: 'twb', DM: 'sdm', CM: 'scm', W: 'tw', AM: 'tam', ST: 'tcf' }, counter: { GK: 'lhg', CB: 'cvc', FB: 'hfb', WB: 'twb', DM: 'sdm', CM: 'scm', W: 'ow', AM: 'oam', ST: 'cof' }, std: { GK: 'lhg', CB: 'cbd', FB: 'hfb', WB: 'twb', DM: 'sdm', CM: 'scm', W: 'tw', AM: 'tam', ST: 'pfw' } };
+const OOP_STYLE = { gegen: 'press', tiki: 'press', vtiki: 'press', control: 'std', wing: 'std', route1: 'std', fluid: 'counter', direct: 'counter', catenaccio: 'hold', bus: 'hold' };
+// 미소유 시 포메이션: 역습·수비 스타일은 더 촘촘한 형태로 내려섬
+const OOP_FORM = { fluid: { '4-2-3-1': '4-4-2', '4-3-3': '4-5-1' }, direct: { '4-2-3-1': '4-4-2', '4-3-3': '4-5-1' }, catenaccio: { '4-1-2-1-2': '4-5-1', '4-3-3': '4-5-1', '4-2-3-1': '4-5-1' }, bus: { '4-3-3': '4-5-1', '4-2-3-1': '4-5-1', '4-4-2': '4-5-1' }, control: { '4-2-3-1': '4-4-2' }, wing: { '4-3-3': '4-5-1' } };
 function aiSetup(T, m, unavail) {
   const mg = T.mgrs[m]; const team = teamOf(T, m); const un = unavail || new Set();
   const tp = Object.assign({}, team, { players: team.players.filter(p => !un.has(p.id)) });
   const form = E.FORMATIONS[mg.formation] ? mg.formation : '4-3-3'; const s = E.makeSetup(tp, form);
   applyStyle(s.tactics, STYLES[mg.style] ? mg.style : 'control'); s.tactics.style = STYLES[mg.style] ? mg.style : 'control';
   s.roles = s.lineup.map((id, i) => { const p = T.players[id]; const code = E.FORMATIONS[form][i][0]; return p ? bestRole(p, code) : E.FORMATIONS[form][i][3]; });
-  return s;
+  const sk = STYLES[mg.style] ? (STYLE_KEYS.includes(mg.style) ? mg.style : STYLE_KEYS.find(k => STYLES[k] === STYLES[mg.style])) : 'control';
+  const of = (OOP_FORM[sk] || {})[form]; if (of) s.slotsOop = E.oopFrom(s, of);
+  const ob = OOP_BY[OOP_STYLE[sk] || 'std']; const ol = E.oopSlotsOf(s); s.rolesD = ol.map(x => ob[E.SLOT_GROUP[x[0]]]);
+  return E.normRoles(s);
 }
 // 사용자 전술 점검: 명단에 없는/출전 정지 선수를 가장 알맞은 선수로 교체. 바뀐 내용 목록 반환
 function repairSetup(T, m, setup, unavail) {
@@ -243,6 +253,7 @@ function repairSetup(T, m, setup, unavail) {
 function userSetup(T, m) {
   let s = T.setups[m]; const team = teamOf(T, m);
   if (!s || !s.lineup || s.lineup.length !== 11) { s = E.makeSetup(team, E.FORMATIONS[T.mgrs[m].formation] ? T.mgrs[m].formation : '4-3-3'); s.roles = s.lineup.map((id, i) => bestRole(T.players[id], E.slotsOf(s)[i][0])); T.setups[m] = s; }
+  E.normRoles(s);
   const def = E.DEFAULT_TACTICS(); for (const k in def) if (s.tactics[k] === undefined) s.tactics[k] = def[k];
   s.takers = s.takers || { pen: '', fk: '', corner: '' }; s.teamId = team.id;
   return s;
@@ -533,5 +544,5 @@ function archiveOf(T) {
   return { id: T.id, name: T.name, format: T.cfg.format, n: T.cfg.n, draftMode: T.cfg.draftMode, ended: T.ended || Date.now(), champion: T.mgrs[T.champion].team.name, champMine: T.champion === me, myTeam: T.mgrs[me].team.name, place, rec: [w, d, l], scorer: nm(aw.scorer), assist: nm(aw.assist), mvp: nm(aw.mvp) };
 }
 
-G.DXC = { STYLE_KEYS, MENTS, mentOf, setMent, applyStyle, clubIndex, clubsFor, FORMATS, DRAFT_MODES, POOL_PRESETS, DEFAULT_CFG, STYLES, GL, KO_NAME, GRP, SLOT_G, rngOf, realIndex, leaguesOf, poolPreview, buildPool, newTournament, makeManagers, teamOf, teamFromIds, assignNumbers, xiValue, bestRole, aiSetup, repairSetup, userSetup, matchSetup, teamRating, draftInit, draftOptions, draftPick, draftAdvance, draftAuto, draftGrades, needs, fcOffer, fcCode, fcSeq, snakeWho, setIdx, canRedraft, redraft, aiRedraft, compInit, standings, tableOf, qualLine, dayStarted, dayDone, nextFixtureOf, winnerOf, advance, alive, suspendedSet, fxSeed, buildJob, applyResult, resolveKO, resultText, fullSummary, stats, bestXI, awards, archiveOf, news };
+G.DXC = { STYLE_KEYS, MENTS, mentOf, setMent, applyStyle, clubIndex, clubsFor, FORMATS, DRAFT_MODES, POOL_PRESETS, DEFAULT_CFG, STYLES, GL, KO_NAME, GRP, SLOT_G, rngOf, realIndex, leaguesOf, poolPreview, buildPool, newTournament, makeManagers, teamOf, teamFromIds, assignNumbers, xiValue, bestRole, aiSetup, repairSetup, userSetup, matchSetup, teamRating, bestDRole, draftInit, draftOptions, draftPick, draftAdvance, draftAuto, draftGrades, needs, fcOffer, fcCode, fcSeq, snakeWho, setIdx, canRedraft, redraft, aiRedraft, compInit, standings, tableOf, qualLine, dayStarted, dayDone, nextFixtureOf, winnerOf, advance, alive, suspendedSet, fxSeed, buildJob, applyResult, resolveKO, resultText, fullSummary, stats, bestXI, awards, archiveOf, news };
 })(typeof window !== 'undefined' ? window : globalThis);

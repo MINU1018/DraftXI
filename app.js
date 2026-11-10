@@ -650,6 +650,7 @@ function openCompare(A, B) {
       rows)), 'compare');
 }
 function tacticsPanel(ctx) {
+  E.normRoles(ctx.setup);
   const box = h('div', { class: 'stack' });
   const oppT = ctx.live ? ctx.live.M.teams[1 - ctx.live.T.side].db : ctx.oppTeam;
   const tabs = [['lineup', '선수 배치·역할'], ['team', '팀 지침'], ['set', '세트피스·주장']]; if (oppT) tabs.push(['oi', '상대 선수 지시']);
@@ -666,13 +667,15 @@ function tacticsPanel(ctx) {
 const PRESET_MAX = 30;
 const clone = o => JSON.parse(JSON.stringify(o));
 function presetOf(setup, withXI) {
-  const o = { formation: setup.formation, slots: setup.slots ? clone(setup.slots) : null, roles: clone(setup.roles), instr: clone(setup.instr), tactics: clone(setup.tactics) };
+  const o = { formation: setup.formation, slots: setup.slots ? clone(setup.slots) : null, slotsOop: setup.slotsOop ? clone(setup.slotsOop) : null, roles: clone(setup.roles), rolesD: setup.rolesD ? clone(setup.rolesD) : null, instr: clone(setup.instr), tactics: clone(setup.tactics) };
   if (withXI) Object.assign(o, { lineup: setup.lineup.slice(), bench: (setup.bench || []).slice(), captain: setup.captain, takers: clone(setup.takers || {}) });
   return o;
 }
 function applyPreset(ctx, pr) {
   const { team, setup } = ctx;
   setup.formation = pr.formation; if (pr.slots) setup.slots = clone(pr.slots); else delete setup.slots;
+  if (pr.slotsOop && pr.slotsOop.length === 11) setup.slotsOop = clone(pr.slotsOop); else delete setup.slotsOop;
+  if (pr.rolesD) setup.rolesD = clone(pr.rolesD); else delete setup.rolesD;
   setup.roles = clone(pr.roles); setup.instr = clone(pr.instr); setup.tactics = Object.assign(clone(setup.tactics || {}), clone(pr.tactics));
   if (pr.lineup) {
     const ok = id => team.players.some(p => p.id === id) && !(ctx.unavail && ctx.unavail.has(id));
@@ -685,7 +688,7 @@ function applyPreset(ctx, pr) {
     if (pr.captain && nl.includes(pr.captain)) setup.captain = pr.captain;
     if (pr.takers) setup.takers = Object.assign({ pen: '', fk: '', corner: '' }, pr.takers);
   }
-  S.selSlot = null; S.swapA = null;
+  E.normRoles(setup); S.selSlot = null; S.swapA = null;
 }
 function presetBar(ctx) {
   const list = ctx.presets.get() || [];
@@ -749,23 +752,32 @@ const ZONES = [['ST', 50, 15], ['AML', 14, 34], ['AMC', 50, 34], ['AMR', 86, 34]
 const ZONE_H = [.74, .58, .42, .27, .1].map(y => 95 - y * 92), ZONE_V = [50 - .55 * 41, 50 + .55 * 41];
 function lineupTab(ctx) {
   const { team, setup, live } = ctx;
-  const F = E.slotsOf(setup);
+  if (!S.tacView || !['base', 'oopf', 'shape'].includes(S.tacView)) S.tacView = 'base';
+  const oop = S.tacView === 'oopf';
+  const ensureOop = () => { if (!setup.slotsOop || setup.slotsOop.length !== 11) setup.slotsOop = E.slotsOf(setup).map(x => [x[0], x[1], x[2]]); return setup.slotsOop; };
+  const IPF = E.slotsOf(setup); const F = oop ? E.oopSlotsOf(setup) : IPF;
   const custom = !!(setup.slots && setup.slots.length === 11);
   const g = h('div', { class: 'tac' });
   const left = h('div', { class: 'stack' });
   const presets = Object.keys(E.FORMATIONS).map(f => [f, f]);
-  left.append(h('div', { class: 'row' }, h('span', { class: 'lbl' }, '포메이션'), sel(custom ? [['custom', `사용자 지정 ${E.formLabel(F)}`], ...presets] : presets, custom ? 'custom' : setup.formation, v => {
+  if (!oop) {
+  left.append(h('div', { class: 'row' }, h('span', { class: 'lbl' }, '소유 시 포메이션'), sel(custom ? [['custom', `사용자 지정 ${E.formLabel(F)}`], ...presets] : presets, custom ? 'custom' : setup.formation, v => {
     if (v === 'custom') return;
     if (live) { E.changeFormation(live.M, live.T, v); logOp({ side: live.T.side, op: 'form', f: v }); }
-    else { setup.formation = v; delete setup.slots; setup.roles = E.FORMATIONS[v].map(s => s[3]); setup.instr = E.FORMATIONS[v].map(() => E.DEFAULT_INSTR()); }
+    else { setup.formation = v; delete setup.slots; delete setup.slotsOop; delete setup.rolesD; setup.roles = E.FORMATIONS[v].map(s => s[3]); setup.instr = E.FORMATIONS[v].map(() => E.DEFAULT_INSTR()); E.normRoles(setup); }
     S.selSlot = null; ctx.onChange();
   }, 'tfm'),
     !live ? h('button', { class: 'btn sm', onclick: () => { const ns = availSetup(team, setup.formation, ctx.unavail || new Set(), ctx.cond, setup); const keepSlots = setup.slots; setup.lineup = ns.lineup; setup.bench = ns.bench; if (!keepSlots) setup.roles = ns.roles; setup.captain = ns.captain; S.selSlot = null; ctx.onChange(); } }, '자동 선발') : null,
-    !live ? h('button', { class: 'btn sm', title: '각 자리 선수의 성향 유형에 가장 잘 맞는 역할로 바꿈', onclick: () => { let n = 0; E.slotsOf(setup).forEach((sl, k) => { const pp = playerOf(team, setup.lineup[k]); if (!pp) return; const f = roleFit(pp, sl[0]); const best = E.rolesForSlot(sl[0]).filter(r => f[r] != null).sort((a, b) => f[b] - f[a])[0]; if (best && setup.roles[k] !== best) { setup.roles[k] = best; n++; } }); toast(n ? `역할 ${n}개를 추천 역할로 바꿨습니다.` : '이미 모두 추천 역할입니다.'); ctx.onChange(); } }, '추천 역할로') : null,
+    !live ? h('button', { class: 'btn sm', title: '각 자리 선수의 주요 능력치에 가장 잘 맞는 소유 시·미소유 시 역할로 바꿈', onclick: () => { let n = 0; const il = E.slotsOf(setup), ol = E.oopSlotsOf(setup); for (let k = 0; k < 11; k++) { const pp = playerOf(team, setup.lineup[k]); if (!pp) continue; const pick = (keys, tbl) => keys.slice().sort((a, b) => E.roleScore(pp, tbl[b]) - E.roleScore(pp, tbl[a]))[0]; const a = pick(E.rolesForSlot(il[k][0]), E.ROLES), d = pick(E.drolesForSlot(ol[k][0]), E.DROLES); if (a && setup.roles[k] !== a) { setup.roles[k] = a; n++; } if (d && setup.rolesD[k] !== d) { setup.rolesD[k] = d; n++; } } toast(n ? `역할 ${n}개를 추천 역할로 바꿨습니다.` : '이미 모두 추천 역할입니다.'); ctx.onChange(); } }, '추천 역할로') : null,
     live ? h('span', { class: 'hint' }, `남은 교체 ${live.T.subsLeft}회`) : null));
+  } else {
+    const has = !!(setup.slotsOop && setup.slotsOop.length === 11);
+    left.append(h('div', { class: 'row' }, h('span', { class: 'lbl' }, '미소유 시 포메이션'), sel([['same', '소유 시와 같게'], ...(has ? [['custom', `사용자 지정 ${E.formLabel(F)}`]] : []), ...Object.keys(E.FORMATIONS).map(f => [f, f])], has ? 'custom' : 'same', v => {
+      if (v === 'custom') return; if (v === 'same') delete setup.slotsOop; else setup.slotsOop = E.oopFrom(setup, v); delete setup.rolesD; E.normRoles(setup); ctx.onChange();
+    }, 'tfmo'), h('span', { class: 'hint' }, `소유 시 ${E.formLabel(IPF)} → 미소유 시 ${E.formLabel(F)}`)));
+  }
   if (ctx.unavail && setup.lineup.some(id => ctx.unavail.has(id))) left.append(h('div', { class: 'warnbox' }, '출전할 수 없는 선수가 선발에 있습니다. 경기 시작 시 같은 자리에 가장 적합한 선수로 자동 교체됩니다.'));
-  if (!S.tacView) S.tacView = 'base';
-  left.append(seg([['base', '선발 배치'], ['ip', '공 소유 시'], ['oop', '공 미소유 시']], S.tacView, v => { S.tacView = v; S.shpLine = null; ctx.onChange(); }));
+  left.prepend(seg([['base', '공 소유 시 배치'], ['oopf', '공 미소유 시 배치'], ['shape', '움직임 · 커버 보기']], S.tacView, v => { S.tacView = v; S.shpLine = null; ctx.onChange(); }));
   const pitch = h('div', { class: 'tpitch drag' });
   for (const t of ZONE_H) pitch.append(h('i', { class: 'zl h', style: { top: t + '%' } }));
   for (const l of ZONE_V) pitch.append(h('i', { class: 'zl v', style: { left: l + '%', top: ZONE_H[0] + '%', height: (ZONE_H[4] - ZONE_H[0]) + '%' } }));
@@ -773,13 +785,13 @@ function lineupTab(ctx) {
   F.forEach((s, i) => {
     const p = playerOf(team, setup.lineup[i]);
     const lp = live ? live.T.players.find(q => q.slot === i && !q.off) : null;
-    const lv = p ? E.famLevel(p, s[0]) : 3; const rt = p ? E.posRating(p, s[0]) : null;
+    const ic = IPF[i][0]; const lv = p ? E.famLevel(p, ic) : 3; const rt = p ? E.posRating(p, ic) : null;
     const susp = ctx.unavail && p && ctx.unavail.has(p.id);
     const btn = h('button', { class: 'slot ' + ['fam-x', 'fam-bad', 'fam-mid', ''][lv], 'data-si': i, 'aria-pressed': String(S.selSlot === i), style: { left: (50 + s[2] * 41) + '%', top: (95 - s[1] * 92) + '%' }, title: p ? `${p.name} (대표 ${posLabel(p.pos)} ${D.calcOvr(p.stats, p.pos)}) — ${posLabel(s[0])} 자리 능력치 ${rt} · ${FAM_LBL[lv]} · 끌어서 다른 선수 위에 놓으면 서로 자리 교체, 빈 곳에 놓으면 위치 이동` : posLabel(s[0]) },
       h('span', { class: 'disc', style: { background: s[0] === 'GK' ? '#f2d03d' : team.color1, color: s[0] === 'GK' ? '#111' : ink(team.color1), borderColor: susp ? '#e46a5a' : team.color2 } }, live && lp ? lp.num : (p ? rt : '?')),
       lp ? h('span', { class: 'en' }, h('i', { style: { width: lp.energy + '%', background: lp.energy < 60 ? 'var(--bad)' : lp.energy < 75 ? 'var(--warn)' : 'var(--good)' } })) : null,
       h('span', { class: 'nm' }, live && lp ? shortName(lp.name) : (p ? shortName(p.name) : '비어 있음')),
-      h('span', { class: 'meta' }, susp ? '출전 불가' : `${posLabel(s[0])} · ${(E.ROLES[setup.roles[i]] || {}).n || ''}`));
+      h('span', { class: 'meta' }, susp ? '출전 불가' : oop ? `${posLabel(s[0])} · ${(E.DROLES[(setup.rolesD || [])[i]] || {}).n || ''}` : `${posLabel(s[0])} · ${(E.ROLES[setup.roles[i]] || {}).n || ''}`));
     // 드래그: 놓은 위치의 구역으로 포지션이 바뀜 (GK는 고정)
     let drag = null;
     btn.addEventListener('pointerdown', e => { if (e.button > 0) return; drag = { x: e.clientX, y: e.clientY, moved: false }; btn.setPointerCapture(e.pointerId); });
@@ -794,21 +806,22 @@ function lineupTab(ctx) {
       if (!drag) return; const moved = drag.moved; drag = null; btn.classList.remove('dragging');
       if (!moved) return;
       const tg = dropTarget(pitch, btn, e); pitch.querySelectorAll('.droptgt').forEach(x => x.classList.remove('droptgt'));
-      if (tg) { const j = +tg.dataset.si; btn.dataset.dragged = '1'; swapSlotPlayers(ctx, i, j); return; }
+      if (tg) { const j = +tg.dataset.si; btn.dataset.dragged = '1'; if (oop) { if (IPF[i][0] === 'GK' || IPF[j][0] === 'GK') return ctx.onChange(); const so = ensureOop(); [so[i], so[j]] = [so[j], so[i]]; E.normRoles(setup); return ctx.onChange(); } swapSlotPlayers(ctx, i, j); return; }
       if (s[0] === 'GK') { btn.dataset.dragged = '1'; return ctx.onChange(); } // 골키퍼 자리는 위치 이동 없음 (교체만)
       const r = pitch.getBoundingClientRect(); const lx = Math.max(4, Math.min(96, (e.clientX - r.left) / r.width * 100)), ty = Math.max(8, Math.min(84, (e.clientY - r.top) / r.height * 100));
       const nx = +(Math.round((lx - 50) / 41 * 50) / 50).toFixed(2), ny = +(Math.round((95 - ty) / 92 * 50) / 50).toFixed(2);
+      if (oop) { const so = ensureOop(); so[i] = [E.codeAt(ny, nx), ny, nx]; E.normRoles(setup); btn.dataset.dragged = '1'; return ctx.onChange(); }
       const sl = ensureSlots(setup); const code = E.codeAt(ny, nx);
       if (code !== sl[i][0] && !E.rolesForSlot(code).includes(setup.roles[i])) setup.roles[i] = E.DEFAULT_ROLE[code] || E.rolesForSlot(code)[0];
       sl[i] = [code, ny, nx]; setup.formation = 'custom';
-      if (live) E.refreshCodes(live.T);
+      E.normRoles(setup); if (live) E.refreshCodes(live.T);
       btn.dataset.dragged = '1'; ctx.onChange();
     });
     btn.addEventListener('click', e => { if (btn.dataset.dragged) { delete btn.dataset.dragged; return; } slotClick(ctx, i); });
     pitch.append(btn);
   });
-  if (S.tacView !== 'base') left.append(shapeView(ctx, S.tacView));
-  else { left.append(pitch);
+  if (S.tacView === 'shape') left.append(shapeView(ctx));
+  else { left.append(pitch); if (oop) left.append(h('p', { class: 'hint', style: { margin: 0 } }, '공을 잃었을 때 각 선수가 돌아갈 자리입니다. 바둑알을 끌어 옮기면 그 선수의 수비 위치가 바뀌고(예: 소유 시 4-2-3-1 → 미소유 시 4-4-2), 다른 선수 위에 놓으면 두 선수의 수비 위치가 서로 바뀝니다. 골키퍼는 고정입니다. 자리를 누르면 미소유 시 역할을 고를 수 있습니다. 능력치 적용(자리 익숙함)은 소유 시 포지션 기준입니다.')); else
   left.append(h('p', { class: 'hint', style: { margin: 0 } }, '자리를 누르면 역할·개인 지침·교체 선수를 고르는 창이 뜹니다. ' + '바둑알 숫자는 그 자리에 섰을 때의 능력치입니다. 바둑알을 다른 선수 위에 끌어다 놓으면 두 선수의 자리가 바뀌고, 빈 곳에 놓으면 그 구역의 포지션(DL·DC·WBL·DM·MC·AMC·ST 등)으로 위치가 바뀝니다. 테두리 색: 노랑 가능 · 주황 미숙 · 빨강 부적합. 경기에서는 바둑알 숫자(그 자리 능력치 − 익숙함 보정) 비율만큼 능력치가 적용됩니다. 역할 목록의 숫자는 그 역할(성향 유형)에 대한 적합도이고 ★가 가장 잘 맞는 역할입니다.')); }
   g.append(left);
   const right = h('div', { class: 'stack' });
@@ -953,10 +966,19 @@ function slotPopup(ctx, i) {
     box.append(h('div', { class: 'mhead' }, h('span', { class: 'pnum', style: { background: team.color1, color: ink(team.color1), borderColor: team.color2 } }, rt ?? '?'),
       h('div', { class: 'grow' }, h('div', { class: 'lbl' }, `${posLabel(s[0])} · ${POS_KO[s[0]] || ''} 자리${p ? ` · ${FAM_LBL[lv]}` : ''}`), h('h2', null, p ? pl(p.name, p.id) : '비어 있음')),
       h('button', { class: 'btn primary', onclick: close }, '완료')));
-    // 역할
-    const fit = roleFit(p, s[0]); const roles = E.rolesForSlot(s[0]); const best = roles.filter(r => fit[r] != null).sort((a, b) => fit[b] - fit[a])[0];
-    box.append(h('div', { class: 'spsec' }, h('div', { class: 'lbl' }, '역할 · 플레이 스타일'), h('div', { class: 'rolegrid' }, ...roles.map(r => h('button', { type: 'button', class: 'rolecard', 'aria-pressed': String(setup.roles[i] === r), onclick: () => { setup.roles[i] = r; dirty = true; draw(); } },
-      h('b', null, (E.ROLES[r] || {}).n || r, r === best ? h('span', { class: 'star', title: '이 선수에게 가장 잘 맞는 역할' }, ' ★') : null), h('span', { class: 'num ' + (fit[r] != null ? ovrClass(fit[r]) : 'dim') }, fit[r] != null ? Math.round(fit[r]) : '-'))))));
+    // 역할: 공 소유 시 / 미소유 시
+    const os = E.oopSlotsOf(setup)[i]; if (!setup.rolesD) E.normRoles(setup);
+    const roleSec = (title, keys, tbl, cur, set) => {
+      const best = p ? keys.slice().sort((a, b) => E.roleScore(p, tbl[b]) - E.roleScore(p, tbl[a]))[0] : null;
+      return h('div', { class: 'spsec' }, h('div', { class: 'lbl' }, title), h('div', { class: 'rolegrid' }, ...keys.map(r => { const R = tbl[r]; const on = cur === r;
+        return h('button', { type: 'button', class: 'rolecard', 'aria-pressed': String(on), onclick: () => { set(r); dirty = true; draw(); } },
+          h('b', null, R.n, r === best ? h('span', { class: 'star', title: '이 선수의 주요 능력치에 가장 잘 맞는 역할' }, ' ★ 추천') : null),
+          h('span', { class: 'rd' }, R.d || ''),
+          h('span', { class: 'rk' }, ...(R.k || []).map(k => h('span', { class: 'kst' }, D.STAT_LABELS[k], p ? h('i', { class: 'num ' + ovrClass(p.stats[k]) }, p.stats[k]) : null))),
+          on && R.tr ? h('span', { class: 'rtr' }, '어울리는 성향: ' + R.tr) : null); })));
+    };
+    box.append(roleSec(`공 소유 시 역할 · ${posLabel(s[0])}`, E.rolesForSlot(s[0]), E.ROLES, setup.roles[i], r => { setup.roles[i] = r; }));
+    box.append(roleSec(`공 미소유 시 역할 · ${posLabel(os[0])}`, E.drolesForSlot(os[0]), E.DROLES, setup.rolesD[i], r => { setup.rolesD[i] = r; }));
     // 개인 지침
     const piBox = h('div', { class: 'spsec' }, h('div', { class: 'row', style: { justifyContent: 'space-between' } }, h('div', { class: 'lbl' }, '개인 지침'), h('button', { class: 'btn sm ghost', onclick: () => { setup.instr[i] = E.DEFAULT_INSTR(); dirty = true; draw(); } }, '지침 초기화')));
     for (const [gk, gl] of PI_GROUPS) {
@@ -984,10 +1006,10 @@ function slotPopup(ctx, i) {
 // 포메이션 좌표 + 역할 + 개인 지침 + 팀 지침으로 각 선수의 중심 위치와 움직임 범위를 어림한 그림 (엔진 움직임의 단순화)
 const SHP_COL = ['#f2c14e', '#5aa9e6', '#5cc98a', '#e46a5a', '#b48cf2', '#f28fb8', '#59d0c8', '#f08c2e', '#9be15d', '#8da9c4', '#e8efe9'];
 function shapeModel(ctx, phase, line) {
-  const { team, setup } = ctx; const t = setup.tactics; const F = E.slotsOf(setup); const out = [];
+  const { team, setup } = ctx; const t = setup.tactics; const F = phase === 'oop' ? E.oopSlotsOf(setup) : E.slotsOf(setup); const out = [];
   const cbY = Math.min(...F.filter(s => s[0] === 'CB').map(s => s[1]), .2);
   F.forEach((s, i) => {
-    const R = E.ROLES[setup.roles[i]] || {}; const ins = setup.instr[i] || {}; const code = s[0]; const g = E.SLOT_GROUP[code]; const sy = s[1], sx = s[2]; const sg = Math.sign(sx) || 0; let x, y, rx, ry;
+    const R = E.ROLES[setup.roles[i]] || {}; const RD = E.DROLES[(setup.rolesD || [])[i]] || {}; const ins = setup.instr[i] || {}; const code = s[0]; const g = E.SLOT_GROUP[code]; const sy = s[1], sx = s[2]; const sg = Math.sign(sx) || 0; let x, y, rx, ry;
     if (phase === 'ip') {
       const ballY = [.22, .5, .78][line];
       y = sy * [.78, .86, .9][line] + [0, .16, .3][line] + (t.ment || 0) * .012 + (R.fwd || 0) * [.3, .8, 1.2][line] + (ins.fwd || 0) * .05 - (line > 0 ? (R.drop || 0) * .8 : 0) - (R.hold || 0);
@@ -1002,9 +1024,9 @@ function shapeModel(ctx, phase, line) {
       ry = .06 + (R.run || 0) * .05 + (R.fwd || 0) * .25 + (ins.free ? .05 : 0);
     } else {
       const back = [.13, .27, .42][line] + ((t.defLine ?? 2) - 2) * .025, span = [.36, .42, .46][line] + ((t.engage ?? 2) - 2) * .02;
-      y = back + (sy - .18) / .66 * span + (R.press || 0) * .03 + (ins.press || 0) * .02; if (code === 'GK') y = .04 + line * .02;
-      x = sx * ([.62, .7, .8][line] + (t.trap === 'inside' ? -.06 : t.trap === 'outside' ? .06 : 0));
-      rx = .09 + (t.press ?? 1) * .015 + (ins.press || 0) * .02; ry = .05 + (t.press ?? 1) * .012 + (ins.press || 0) * .015;
+      y = back + (sy - .18) / .66 * span + ((R.press || 0) + (RD.press || 0)) * .025 + (ins.press || 0) * .02 + (RD.up || 0) - (RD.back || 0); if (RD.line) y = Math.min(y, back + .02); if (code === 'GK') y = .04 + line * .02 + (RD.sweep ? .03 : 0);
+      x = sx * ([.62, .7, .8][line] + (t.trap === 'inside' ? -.06 : t.trap === 'outside' ? .06 : 0)) * (RD.narrow ? 1 - RD.narrow : 1) + (RD.split ? (sg || (i % 2 ? 1 : -1)) * RD.split : 0);
+      rx = .09 + (t.press ?? 1) * .015 + (ins.press || 0) * .02 + (RD.wcov || 0) * .25 + Math.max(0, RD.press || 0) * .03; ry = .05 + (t.press ?? 1) * .012 + (ins.press || 0) * .015;
     }
     if (code === 'GK') { x = 0; rx = .1; ry = .035; }
     const p = playerOf(team, setup.lineup[i]);
@@ -1012,8 +1034,8 @@ function shapeModel(ctx, phase, line) {
   });
   return out;
 }
-function shapeView(ctx, phase) {
-  const { team, setup } = ctx; const t = setup.tactics;
+function shapeView(ctx) {
+  const { team, setup } = ctx; const t = setup.tactics; if (S.shpPhase !== 'oop') S.shpPhase = 'ip'; const phase = S.shpPhase;
   if (S.shpLine == null) S.shpLine = phase === 'oop' ? ((t.engage ?? 2) <= 1 ? 0 : (t.engage ?? 2) >= 3 ? 2 : 1) : 1;
   if (S.shpCover == null) S.shpCover = true; if (S.shpRange == null) S.shpRange = true;
   const line = S.shpLine; const pts = shapeModel(ctx, phase, line);
@@ -1039,7 +1061,7 @@ function shapeView(ctx, phase) {
   const desc = phase === 'ip' ? ['공이 우리 진영에 있을 때 (후방 빌드업)', '공이 중원에 있을 때 (전개)', '공이 상대 진영에 있을 때 (마무리)'][line] : ['낮은 블록으로 내려앉았을 때', '중간 블록으로 버틸 때', '전방에서 압박할 때'][line] + (cur === line ? ' · 지금 압박 기준선 설정에 해당' : '');
   const emp = +pitch.dataset.empty || 0;
   return h('div', { class: 'stack' },
-    h('div', { class: 'row' }, seg(LN.map(([v, l]) => [+v, l]), line, v => { S.shpLine = v; ctx.onChange(); }),
+    h('div', { class: 'row' }, seg([['ip', '공 소유 시'], ['oop', '공 미소유 시']], phase, v => { S.shpPhase = v; S.shpLine = null; ctx.onChange(); }), seg(LN.map(([v, l]) => [+v, l]), line, v => { S.shpLine = v; ctx.onChange(); }),
       h('button', { class: 'btn sm' + (S.shpCover ? ' on' : ''), 'aria-pressed': String(S.shpCover), onclick: () => { S.shpCover = !S.shpCover; ctx.onChange(); } }, '커버 영역'),
       h('button', { class: 'btn sm' + (S.shpRange ? ' on' : ''), 'aria-pressed': String(S.shpRange), onclick: () => { S.shpRange = !S.shpRange; ctx.onChange(); } }, '움직임 범위')),
     h('div', { class: 'hint' }, desc + (S.shpCover ? (emp ? ` · 빈 공간 ${emp}칸 (팀이 자리 잡은 구역 안에서 가장 가까운 선수가 17m 이상 떨어진 칸)` : ' · 빈 공간 없음') : '')),

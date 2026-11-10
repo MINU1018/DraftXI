@@ -690,10 +690,14 @@ select, input[type=text], input[type=number], input[type=search], textarea { bor
 .modal .box:has(.spop) { width: min(820px, 100%); }
 .spop .mhead h2 .linkbtn { font: inherit; text-decoration: none; }
 .spsec { padding: 12px 0; border-top: 1px solid var(--line); display: grid; gap: 8px; }
-.rolegrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
-.rolecard { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 9px 11px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel2); color: var(--fg); text-align: left; }
-.rolecard b { font-size: 13px; font-weight: 600; } .rolecard .star { color: var(--accent); } .rolecard .num { font-size: 16px; font-weight: 700; }
-.rolecard[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--panel2)); }
+.rolegrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 6px; }
+.rolecard { display: grid; gap: 4px; align-content: start; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel2); color: var(--fg); text-align: left; }
+.rolecard b { font-size: 14px; font-weight: 700; } .rolecard .star { color: var(--accent); font-size: 11.5px; font-weight: 700; }
+.rolecard .rd { font-size: 12px; color: var(--muted); line-height: 1.4; }
+.rolecard .rk { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; } .rolecard .kst { display: inline-flex; gap: 5px; align-items: baseline; font-size: 11.5px; padding: 1px 7px; border-radius: 999px; background: var(--panel); color: var(--chalk); } .rolecard .kst i { font-style: normal; font-weight: 700; font-size: 13px; }
+.rolecard .rtr { font-size: 11.5px; color: var(--accent); }
+.rolecard[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); background: color-mix(in srgb, var(--accent) 9%, var(--panel2)); }
+.modal .box:has(.spop) { width: min(980px, 100%); }
 .pigrp2 { display: grid; gap: 5px; padding: 8px 10px; border-radius: 10px; background: var(--panel2); }
 .pigrp2 .pg { font-family: var(--display); font-weight: 700; letter-spacing: .05em; color: var(--muted); font-size: 13px; }
 .pirow { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 10px; align-items: center; } .pirow .pl2 { font-size: 13px; }
