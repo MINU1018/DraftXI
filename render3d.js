@@ -70,6 +70,80 @@ function kitMaterial(inf, numTex) {
   m.customProgramCacheKey = () => 'kit-v1';
   return m;
 }
+// ===== 사람 형태 몸체 =====
+// 내장 모델(X Bot)은 허리가 잘록하고 관절이 구슬로 끊긴 마네킹이라, 뼈대와 애니메이션만 쓰고 겉모습은 직접 만든다.
+// 뼈마다 그 부위(몸통·허벅지·정강이…)를 붙이며, 치수는 cm(뼈 로컬 단위). 실제 축구선수 비율: 어깨 폭 39, 허리 32, 골반 34, 머리 높이 22
+const _m4 = new THREE.Matrix4(), _p3 = new THREE.Vector3(), _s3 = new THREE.Vector3(), _qq = new THREE.Quaternion(), _up = new THREE.Vector3(0, 1, 0), _dir = new THREE.Vector3(), _eu = new THREE.Euler();
+const BOOTS = ['#16181c', '#f2f2f2', '#f5d21f', '#ff6a1f', '#27c4d9', '#e23b5a', '#16181c', '#2b3aa0'];
+class BodyBuilder {
+  constructor() { this.pos = []; this.nor = []; this.col = []; }
+  add(geo, m, color) {
+    const g = geo.index ? geo.toNonIndexed() : geo; g.applyMatrix4(m);
+    const p = g.attributes.position.array, n = g.attributes.normal.array;
+    for (let i = 0; i < p.length; i += 3) { this.pos.push(p[i], p[i + 1], p[i + 2]); this.nor.push(n[i], n[i + 1], n[i + 2]); this.col.push(color.r, color.g, color.b); }
+    if (g !== geo) g.dispose(); geo.dispose(); return this;
+  }
+  // a→b를 잇는 원뿔대. r0 = a쪽 반지름, r1 = b쪽 반지름, sx·sz = 단면을 타원으로 (몸통용)
+  cyl(a, b, r0, r1, color, sx, sz) {
+    _dir.set(b[0] - a[0], b[1] - a[1], b[2] - a[2]); const L = _dir.length(); if (L < 1e-4) return this; _dir.divideScalar(L);
+    const geo = new THREE.CylinderGeometry(r1, r0, L, 12, 1, true); geo.translate(0, L / 2, 0);
+    _qq.setFromUnitVectors(_up, _dir); _m4.compose(_p3.set(a[0], a[1], a[2]), _qq, _s3.set(sx || 1, 1, sz || 1));
+    return this.add(geo, _m4, color);
+  }
+  // 타원체. rotX = 앞뒤 기울임, th = 위에서부터 덮는 각(머리카락용 부분 구)
+  ell(c, rx, ry, rz, color, rotX, th) {
+    const geo = new THREE.SphereGeometry(1, 10, 7, 0, Math.PI * 2, 0, th || Math.PI);
+    _qq.setFromEuler(_eu.set(rotX || 0, 0, 0)); _m4.compose(_p3.set(c[0], c[1], c[2]), _qq, _s3.set(rx, ry, rz));
+    return this.add(geo, _m4, color);
+  }
+  mesh(mat) {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(this.pos, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(this.nor, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(this.col, 3));
+    const m = new THREE.Mesh(g, mat); m.castShadow = true; m.frustumCulled = false; return m;
+  }
+}
+let bodyMat = null;
+function buildBody(root, inf, numTex) {
+  const bone = n => root.getObjectByName('mixamorig' + n) || root.getObjectByName('mixamorig:' + n);
+  const need = ['Hips', 'Spine', 'Spine1', 'Spine2', 'Neck', 'Head', 'LeftArm', 'RightArm', 'LeftForeArm', 'RightForeArm', 'LeftHand', 'RightHand', 'LeftUpLeg', 'RightUpLeg', 'LeftLeg', 'RightLeg', 'LeftFoot', 'RightFoot'];
+  const B = {}; for (const n of need) { B[n] = bone(n); if (!B[n]) throw new Error('bone ' + n); }
+  const gk = inf.gk; const C = {
+    shirt: lin(gk ? inf.gkColor : inf.c1), trim: lin(gk ? '#1b1f24' : inf.c2), shorts: lin(gk ? '#1b1f24' : inf.c2), sock: lin(gk ? inf.gkColor : inf.c1),
+    skin: new THREE.Color(SKIN[inf.skin % SKIN.length]).convertSRGBToLinear(), hair: lin(['#1a1410', '#2b1d14', '#4a3020', '#6b4a2a', '#c9a46a', '#0e0e10'][(inf.skin * 7 + (inf.num | 0)) % 6]),
+    boot: lin(BOOTS[((inf.pid | 0) * 5 + (inf.num | 0)) % BOOTS.length]), glove: lin('#e9eef2'), eye: lin('#15110e') };
+  // 상의와 하의 색이 같으면 구분이 안 되므로 하의·깃을 살짝 어둡게
+  if (C.shorts.getHex() === C.shirt.getHex()) { C.shorts = C.shorts.clone().multiplyScalar(.72); C.trim = C.shorts; }
+  const arm = gk ? C.shirt : C.skin, hand = gk ? C.glove : C.skin;
+  if (!bodyMat) bodyMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .8, metalness: 0 });
+  const put = (name, fn) => { const bb = new BodyBuilder(); fn(bb, B[name]); const m = bb.mesh(bodyMat); m.name = 'body_' + name; B[name].add(m); return m; };
+  const kid = (b, re) => { const c = b.children.find(o => o.isBone && re.test(o.name)); if (!c) throw new Error('child of ' + b.name); return [c.position.x, c.position.y, c.position.z]; };
+  const mul = (v, k) => [v[0] * k, v[1] * k, v[2] * k];
+  // 골반(하의)
+  put('Hips', b => b.ell([0, -3, -.6], 17.4, 11.5, 10.9, C.shorts));
+  // 몸통(상의): 허리 → 가슴 → 어깨. 폭(x)이 깊이(z)보다 넓은 타원 단면
+  put('Spine', b => b.cyl([0, -9.5, .2], [0, 10.1, -1], 16.0, 16.2, C.shirt, 1, .67));
+  put('Spine1', b => b.cyl([0, 0, 0], [0, 9.1, -1.4], 16.2, 17.6, C.shirt, 1, .66));
+  const chest = put('Spine2', b => { b.cyl([0, 0, 0], [0, 10, -1.7], 17.6, 19.3, C.shirt, 1, .62); b.ell([0, 10, -1.9], 19.5, 6.3, 11.4, C.shirt); b.cyl([0, 14.3, -2.3], [0, 16.6, -2.5], 6.5, 6.1, C.trim); });
+  // 등번호
+  { const np = new THREE.Mesh(new THREE.PlaneGeometry(21, 21), new THREE.MeshBasicMaterial({ map: numTex, transparent: true, depthWrite: false })); np.position.set(0, 3.2, -12.6); np.rotation.y = Math.PI; np.name = 'body_num'; B.Spine2.add(np); }
+  put('Neck', b => b.cyl([0, -2, 0], [0, 9.6, 1.7], 5.3, 4.9, C.skin));
+  put('Head', b => { b.ell([0, 8.6, 1.8], 8.4, 10.9, 9.6, C.skin); b.ell([0, 9.5, .7], 8.95, 11.25, 10.25, C.hair, -.4, Math.PI * .56);
+    b.ell([0, 6.4, 11], 1.25, 1.7, 1.5, C.skin); b.ell([8.3, 7.6, 1.2], 1.2, 2.3, 1.6, C.skin); b.ell([-8.3, 7.6, 1.2], 1.2, 2.3, 1.6, C.skin);
+    b.ell([3.1, 9.3, 10.55], 1.05, .7, .6, C.eye); b.ell([-3.1, 9.3, 10.55], 1.05, .7, .6, C.eye); });
+  for (const S of ['Left', 'Right']) {
+    // 팔: 어깨 → 반소매 → 팔뚝 → 손 (골키퍼는 긴소매 + 장갑)
+    const tA = kid(B[S + 'Arm'], /ForeArm/), tF = kid(B[S + 'ForeArm'], /Hand/); const sg = Math.sign(tF[0]) || 1;
+    put(S + 'Arm', b => { b.ell([0, 0, 0], 6.5, 6.3, 6.5, C.shirt); b.cyl([0, 0, 0], mul(tA, .52), 6.0, 5.4, C.shirt); b.cyl(mul(tA, .5), mul(tA, .56), 5.55, 5.5, gk ? C.shirt : C.trim); b.cyl(mul(tA, .5), tA, 4.6, 3.95, arm); });
+    put(S + 'ForeArm', b => { b.ell([0, 0, 0], 4.05, 4.05, 4.05, arm); b.cyl([0, 0, 0], tF, 3.95, 3.05, arm); });
+    put(S + 'Hand', b => { b.ell([0, 0, 0], 3.2, 3.2, 3.2, hand); b.ell([sg * (gk ? 7.5 : 6.2), -.4, .6], gk ? 7 : 5.3, gk ? 2.9 : 2.1, gk ? 5.2 : 3.9, hand); });
+    // 다리: 하의 자락 → 허벅지 → 무릎 → 양말(종아리) → 축구화
+    const tU = kid(B[S + 'UpLeg'], /Leg$/), tL = kid(B[S + 'Leg'], /Foot/);
+    put(S + 'UpLeg', b => { b.ell([0, 0, 0], 8.9, 8.9, 9.3, C.shorts); b.cyl([0, 2, 0], mul(tU, .47), 9.1, 8.6, C.shorts); b.cyl(mul(tU, .4), tU, 7.6, 5.6, C.skin); });
+    put(S + 'Leg', b => { b.ell([0, 0, 0], 5.7, 5.7, 5.7, C.skin); b.cyl([0, 0, 0], mul(tL, .12), 5.6, 5.4, C.skin); b.cyl(mul(tL, .1), mul(tL, .19), 5.6, 5.75, C.trim); b.cyl(mul(tL, .17), mul(tL, .42), 5.5, 5.8, C.sock); b.cyl(mul(tL, .42), tL, 5.8, 3.95, C.sock); });
+    put(S + 'Foot', b => { b.ell([0, 0, 0], 4.15, 4.15, 4.15, C.sock); b.ell([0, -4.9, 7.2], 4.8, 3.55, 12.6, C.boot); });
+  }
+  void chest;
+}
 const AX = new THREE.Vector3(1, 0, 0), AZ = new THREE.Vector3(0, 0, 1);
 const _q1 = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _v = new THREE.Vector3(), _dq = new THREE.Quaternion();
 // 캐릭터 기준 축으로 뼈를 추가 회전 (애니메이션 위에 킥·다이빙 등 동작을 얹음)
@@ -98,7 +172,9 @@ class Render3D {
     this.modelKind = 'simple'; this.tpl = null; this.modelState = 'none';
   }
   // 'human' | 'simple'
+  // kind: 'human'(사람 형태) | 'xbot'(내장 마네킹) | 'simple'
   setModel(kind, onState) {
+    const st = kind === 'xbot' ? 'xbot' : 'body'; if (kind === 'xbot') kind = 'human'; if (st !== this.humanStyle) { this.humanStyle = st; if (this.tpl) this.clearPlayers(); }
     this.modelKind = kind;
     if (kind !== 'human') { if (this.tpl || this.modelState !== 'none') this.clearPlayers(); this.modelState = 'none'; return; }
     if (this.tpl) { this.clearPlayers(); this.modelState = 'ready'; return; }
@@ -339,20 +415,29 @@ class Render3D {
   }
   // 공: 실제 축구공(깎은 정이십면체, 오각형 12 + 육각형 20 = 32조각)을 구면에 나눠 꼭짓점 색으로 칠함. 지름 22cm
   buildBall() {
-    const geo = new THREE.IcosahedronGeometry(1, 14);
+    // 요즘 경기구 느낌: 흰 바탕에 굽은 띠 무늬 12개(짙은 보라 테두리 + 분홍→보라→청록 그라데이션, 하나 걸러 짙은 남색). 꼭짓점 색으로 칠해 회전이 보임
+    const geo = new THREE.IcosahedronGeometry(1, 22);
     const t = (1 + Math.sqrt(5)) / 2;
     const ico = [[-1, t, 0], [1, t, 0], [-1, -t, 0], [1, -t, 0], [0, -1, t], [0, 1, t], [0, -1, -t], [0, 1, -t], [t, 0, -1], [t, 0, 1], [-t, 0, -1], [-t, 0, 1]].map(v => new THREE.Vector3(...v).normalize());
-    const faces = [[0, 11, 5], [0, 5, 1], [0, 1, 7], [0, 7, 10], [0, 10, 11], [1, 5, 9], [5, 11, 4], [11, 10, 2], [10, 7, 6], [7, 1, 8], [3, 9, 4], [3, 4, 2], [3, 2, 6], [3, 6, 8], [3, 8, 9], [4, 9, 5], [2, 4, 11], [6, 2, 10], [8, 6, 7], [9, 8, 1]];
-    const centers = ico.map(v => [v, 1]).concat(faces.map(f => [ico[f[0]].clone().add(ico[f[1]]).add(ico[f[2]]).normalize(), 0]));
-    const pos = geo.attributes.position; const col = new Float32Array(pos.count * 3); const v = new THREE.Vector3();
+    const basis = ico.map(c => { const ref = Math.abs(c.y) > .9 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0); const u = new THREE.Vector3().crossVectors(c, ref).normalize(); const w = new THREE.Vector3().crossVectors(c, u).normalize(); return [u, w]; });
+    const K = h => new THREE.Color(h).convertSRGBToLinear();
+    const WHITE = K('#f4f3ee'), EDGE = K('#2a1848'), NAVY = K('#1c1740'), PINK = K('#ff4f9a'), VIO = K('#7b5cf0'), CYAN = K('#27c9d6'), SEAM = K('#d9d8d2');
+    const pos = geo.attributes.position; const col = new Float32Array(pos.count * 3); const v = new THREE.Vector3(), cc = new THREE.Color();
     for (let i = 0; i < pos.count; i++) {
-      v.fromBufferAttribute(pos, i).normalize(); let d1 = 9, d2 = 9, c1 = null;
-      for (const [c, pent] of centers) { const d = v.angleTo(c); if (d < d1) { d2 = d1; d1 = d; c1 = pent; } else if (d < d2) d2 = d; }
-      let r, g, b;
-      if (d2 - d1 < .035) { r = .32; g = .34; b = .38; } // 솔기
-      else if (c1) { r = .08; g = .1; b = .14; } // 오각형 (검정)
-      else { r = .96; g = .97; b = .98; } // 육각형 (흰색)
-      col[i * 3] = r; col[i * 3 + 1] = g; col[i * 3 + 2] = b;
+      v.fromBufferAttribute(pos, i).normalize(); let d1 = 9, d2 = 9, k = 0;
+      for (let j = 0; j < 12; j++) { const d = v.angleTo(ico[j]); if (d < d1) { d2 = d1; d1 = d; k = j; } else if (d < d2) d2 = d; }
+      cc.copy(d2 - d1 < .02 ? SEAM : WHITE);
+      let ph = Math.atan2(v.dot(basis[k][1]), v.dot(basis[k][0])) + k * 1.3; ph = Math.atan2(Math.sin(ph), Math.cos(ph));
+      const SP = 1.95, a = Math.abs(ph);
+      // 띠: 중심에서 0.27~0.5rad 떨어진 고리의 일부(약 220°), 끝은 둥글게
+      const inArc = a <= SP ? (d1 > .27 && d1 < .5) : Math.hypot((a - SP) * .385, d1 - .385) < .115;
+      if (inArc) {
+        const edge = a <= SP ? Math.min(d1 - .27, .5 - d1) : .115 - Math.hypot((a - SP) * .385, d1 - .385);
+        if (edge < .028) cc.copy(EDGE);
+        else if (k % 2) { cc.copy(NAVY); if (edge > .05 && edge < .064) cc.copy(CYAN); }
+        else { const g = (ph + SP) / (2 * SP); if (g < .5) cc.copy(PINK).lerp(VIO, Math.max(0, g) * 2); else cc.copy(VIO).lerp(CYAN, Math.min(1, (g - .5) * 2)); }
+      }
+      col[i * 3] = cc.r; col[i * 3 + 1] = cc.g; col[i * 3 + 2] = cc.b;
     }
     geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
     this.ball = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .42, metalness: 0 }));
@@ -405,15 +490,17 @@ class Render3D {
   makeHuman(inf) {
     const g = new THREE.Group(); const body = new THREE.Group(); g.add(body);
     const root = THREE.SkeletonUtils.clone(this.tpl.scene); body.add(root);
-    const mat = kitMaterial(inf, this.numTexture(inf));
-    root.traverse(o => { if (o.isSkinnedMesh) { o.material = mat; o.castShadow = !/Joints/.test(o.name); o.frustumCulled = false; } });
+    let mat = null, built = false;
+    // 기본: 직접 만든 사람 형태 몸체. 실패하거나 '마네킹'을 고르면 내장 모델에 유니폼 색만 입힘
+    if (this.humanStyle !== 'xbot') { try { buildBody(root, inf, this.numTexture(inf)); built = true; root.traverse(o => { if (o.isSkinnedMesh) { o.visible = false; o.castShadow = false; } }); } catch (e) { console.warn('body build failed', e); root.traverse(o => { if (o.isMesh && /^body_/.test(o.name) && o.parent) o.parent.remove(o); }); } }
+    if (!built) { mat = kitMaterial(inf, this.numTexture(inf)); root.traverse(o => { if (o.isSkinnedMesh) { o.visible = true; o.material = mat; o.castShadow = !/Joints/.test(o.name); o.frustumCulled = false; } }); }
     const bone = n => root.getObjectByName('mixamorig' + n) || root.getObjectByName('mixamorig:' + n);
     const B = {}; for (const n of ['Hips', 'Spine', 'Spine1', 'LeftUpLeg', 'RightUpLeg', 'LeftLeg', 'RightLeg', 'LeftArm', 'RightArm', 'LeftForeArm', 'RightForeArm', 'Neck']) B[n] = bone(n);
     const mixer = new THREE.AnimationMixer(root);
     const acts = {}; for (const k of ['idle', 'walk', 'run']) { const a = mixer.clipAction(this.tpl.clips[k]); a.play(); a.setEffectiveWeight(k === 'idle' ? 1 : 0); acts[k] = a; }
     acts.idle.time = Math.random() * 2;
     this.addMarkers(g);
-    g.userData = Object.assign(g.userData, { kind: 'human', body, root, mixer, acts, B, w: { idle: 1, walk: 0, run: 0 }, pid: inf.pid, mat });
+    g.userData = Object.assign(g.userData, { kind: 'human', body, root, mixer, acts, B, w: { idle: 1, walk: 0, run: 0 }, pid: inf.pid, mat, built });
     this.scene.add(g);
     return g;
   }
@@ -440,7 +527,7 @@ class Render3D {
       let g = this.players.get(p.pid); if (!g) { g = this.makePlayer(inf); this.players.set(p.pid, g); }
       seen.add(p.pid); g.visible = true;
       g.position.copy(V(p.x, p.y, 0));
-      const pk = this.plK || 1; if (g.userData.hs !== inf.h * 10 + pk) { g.userData.hs = inf.h * 10 + pk; const sy = (inf.h || 180) / 177 * pk, bmi = (inf.w || 75) / Math.pow((inf.h || 180) / 100, 2); const sx = sy * Math.max(.98, Math.min(1.22, Math.sqrt(bmi / 23) * 1.1)); g.userData.body.scale.set(sx, sy, sx); }
+      const pk = this.plK || 1; if (g.userData.hs !== inf.h * 10 + pk) { g.userData.hs = inf.h * 10 + pk; const sy = (inf.h || 180) / 177 * pk, bmi = (inf.w || 75) / Math.pow((inf.h || 180) / 100, 2); const sx = g.userData.built ? sy * Math.max(.93, Math.min(1.12, Math.sqrt(bmi / 23))) : sy * Math.max(.98, Math.min(1.22, Math.sqrt(bmi / 23) * 1.1)); g.userData.body.scale.set(sx, sy, sx); }
       g.rotation.y = Math.atan2(Math.cos(p.face), -Math.sin(p.face));
       if (g.userData.kind === 'human') this.animateHuman(g, p, adt); else this.animate(g, p, adt);
       g.userData.ring.visible = opt.selected === p.pid;

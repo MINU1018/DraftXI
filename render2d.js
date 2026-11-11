@@ -77,8 +77,10 @@ class Render2D {
       if (opt.names === 'all' || (opt.names === 'carrier' && opt.carrier === p.pid) || opt.selected === p.pid) {
         x.font = `500 ${Math.max(10, Math.round(R * .85))}px "IBM Plex Sans KR", system-ui, sans-serif`;
         const nm = inf.short; const tw = x.measureText(nm).width;
-        x.fillStyle = 'rgba(8,14,11,.72)'; x.fillRect(sx - tw / 2 - 4, sy + R + 2, tw + 8, R * 1.1);
+        const two = opt.posLbl && inf.pos; const bw = Math.max(tw, two ? x.measureText(inf.pos).width : 0);
+        x.fillStyle = 'rgba(8,14,11,.72)'; x.fillRect(sx - bw / 2 - 4, sy + R + 2, bw + 8, R * (two ? 2.05 : 1.1));
         x.fillStyle = '#e8efe9'; x.fillText(nm, sx, sy + R + 2 + R * .55);
+        if (two) { x.fillStyle = '#f2c14e'; x.fillText(inf.pos, sx, sy + R + 2 + R * 1.5); }
       }
     }
     // 공
@@ -90,6 +92,9 @@ class Render2D {
     x.fillStyle = 'rgba(0,0,0,.35)'; x.beginPath(); x.arc(bx + z * sc * .25, by + z * sc * .35, br * .9, 0, 7); x.fill();
     x.fillStyle = '#ffffff'; x.beginPath(); x.arc(bx, by - z * sc * .15, br, 0, 7); x.fill();
     x.lineWidth = 1.2; x.strokeStyle = '#1b2420'; x.stroke();
+    // 공 무늬: 굴러간 거리만큼 도는 굽은 띠 3개
+    if (br >= 4) { const cy = by - z * sc * .15; const rot = (b.x + b.y) * 1.6; const cs = ['#ff4f9a', '#2a1848', '#27c9d6']; x.save(); x.beginPath(); x.arc(bx, cy, br - .6, 0, 7); x.clip(); x.lineCap = 'round'; x.lineWidth = Math.max(1.2, br * .28);
+      for (let i = 0; i < 3; i++) { const a0 = rot + i * 2.094; x.strokeStyle = cs[i]; x.beginPath(); x.arc(bx + Math.cos(a0) * br * .55, cy + Math.sin(a0) * br * .55, br * .42, a0 + .6, a0 + 3.4); x.stroke(); } x.restore(); }
   }
 }
 // 날씨 오버레이 (비·눈·무더위 색조)
