@@ -5,6 +5,7 @@ onmessage = function (e) {
   try {
     const M = FMEngine.createMatch({ seed: j.seed, neutral: !!j.neutral, big: !!j.big, weather: j.weather, teams: [{ team: j.home, setup: j.hs, condition: j.hc }, { team: j.away, setup: j.as, condition: j.ac }], aiSides: [0, 1] });
     FMEngine.simulateToEnd(M);
-    postMessage({ id: j.id, res: DXC.fullSummary(M) });
+    const res = DXC.fullSummary(M); if (j.detail) res.dt = DXC.matchDetail(M);
+    postMessage({ id: j.id, res });
   } catch (err) { postMessage({ id: j.id, error: String(err && err.message || err) }); }
 };

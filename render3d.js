@@ -360,6 +360,8 @@ class Render3D {
   }
   // 공 크기 배율 (1 = 실제 크기 지름 22cm)
   setBallSize(k) { this.ballK = k; this.ball.scale.setScalar(.11 * k); }
+  // 선수 체격 배율: 멀리서 잡는 중계 카메라에서도 사람 형태가 보이도록 조금 키우고 어깨·몸통을 두껍게 함
+  setPlayerScale(k) { this.plK = k || 1; }
   numTexture(inf) {
     return canvasTex(64, 64, (c, w, h) => { c.fillStyle = inf.textColor; c.font = '700 46px "Barlow Condensed", sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(inf.num, w / 2, h / 2 + 2); });
   }
@@ -438,7 +440,7 @@ class Render3D {
       let g = this.players.get(p.pid); if (!g) { g = this.makePlayer(inf); this.players.set(p.pid, g); }
       seen.add(p.pid); g.visible = true;
       g.position.copy(V(p.x, p.y, 0));
-      if (g.userData.hs !== inf.h) { g.userData.hs = inf.h; const sy = (inf.h || 180) / 177, bmi = (inf.w || 75) / Math.pow((inf.h || 180) / 100, 2); const sx = sy * Math.max(.9, Math.min(1.13, Math.sqrt(bmi / 23))); g.userData.body.scale.set(sx, sy, sx); }
+      const pk = this.plK || 1; if (g.userData.hs !== inf.h * 10 + pk) { g.userData.hs = inf.h * 10 + pk; const sy = (inf.h || 180) / 177 * pk, bmi = (inf.w || 75) / Math.pow((inf.h || 180) / 100, 2); const sx = sy * Math.max(.98, Math.min(1.22, Math.sqrt(bmi / 23) * 1.1)); g.userData.body.scale.set(sx, sy, sx); }
       g.rotation.y = Math.atan2(Math.cos(p.face), -Math.sin(p.face));
       if (g.userData.kind === 'human') this.animateHuman(g, p, adt); else this.animate(g, p, adt);
       g.userData.ring.visible = opt.selected === p.pid;
@@ -483,6 +485,9 @@ class Render3D {
       case 8: { const k = Math.min(1, t / .3); P.lArmZ = 2.6 * k; P.rArmZ = 2.6 * k; body.position.y = Math.abs(Math.sin(t * 7)) * .25 * k; need = true; } break;
       case 9: if (t < .8) { const k = Math.sin(t / .8 * Math.PI); P.lArmX = -2.8 * k; P.rArmX = -2.8 * k; P.spine = -.2 * k; need = true; } break;
       case 10: P.lArmX = -1.15; P.rArmX = -1.15; P.lArmZ = -.25; P.rArmZ = -.25; P.spine = .1; need = true; break;
+      // 14: 킥 준비(디딤발 딛고 차는 다리를 뒤로) / 15: 스텝오버(공 위로 다리를 번갈아 돌림)
+      case 14: { const k = Math.min(1, t / .16); P.rUp = .8 * k; P.rKn = 1.1 * k; P.lKn = .25 * k; P.lArmZ = .6 * k; P.rArmZ = .3 * k; P.lArmX = -.4 * k; P.spine = .1 * k; need = true; } break;
+      case 15: if (t < .75) { const w = Math.sin(t * 10), e = Math.sin(Math.min(1, t / .75) * Math.PI); P.rUp = -.75 * Math.max(0, w) * e; P.lUp = -.75 * Math.max(0, -w) * e; P.rKn = .5 * Math.max(0, w) * e; P.lKn = .5 * Math.max(0, -w) * e; P.lArmZ = .55 * e; P.rArmZ = .55 * e; P.spine = .16 * e; body.rotation.z = .14 * w * e; body.position.y = -.05 * e; need = true; } break;
     }
     if (!need) return;
     if (!u.base) u.base = new Map(['Spine', 'LeftUpLeg', 'RightUpLeg', 'LeftLeg', 'RightLeg', 'LeftArm', 'RightArm'].filter(n => B[n]).map(n => [B[n], new THREE.Quaternion()]));
@@ -518,6 +523,8 @@ class Render3D {
       case 8: { const k = Math.min(1, t / .3); aL.rotation.z = 2.7 * k; aR.rotation.z = -2.7 * k; body.position.y += Math.abs(Math.sin(t * 7)) * .25 * k; } break;
       case 9: if (t < .8) { const k = Math.sin(t / .8 * Math.PI); aL.rotation.x = -2.9 * k; aR.rotation.x = -2.9 * k; body.rotation.x = -.2 * k; } break;
       case 10: aL.rotation.x = -1.2; aR.rotation.x = -1.2; aL.rotation.z = -.3; aR.rotation.z = .3; break;
+      case 14: { const k = Math.min(1, t / .16); lR.rotation.x = .9 * k; aL.rotation.z = .6 * k; body.rotation.x = .1 * k; } break;
+      case 15: if (t < .75) { const w = Math.sin(t * 10), e = Math.sin(Math.min(1, t / .75) * Math.PI); lR.rotation.x = -.8 * Math.max(0, w) * e; lL.rotation.x = -.8 * Math.max(0, -w) * e; body.rotation.z = .14 * w * e; aL.rotation.z = .5 * e; aR.rotation.z = -.5 * e; } break;
     }
     // 왼팔은 -x 쪽에 있으므로 좌우 회전 방향을 반전
     aL.rotation.z = -aL.rotation.z; aR.rotation.z = -aR.rotation.z;

@@ -33,7 +33,7 @@ const S = {
   dbLeague: null, dbTeam: null, dbPlayer: null, sideTab: 'feed', lgTab: 'table'
 };
 const prefs = LS.get('draftxi.prefs.v1'); if (prefs) Object.assign(S, prefs); if (prefs && !prefs.v3 && S.speed > 2) S.speed = 2; S.mode = 'virtual';
-const savePrefs = () => LS.set('draftxi.prefs.v1', { home: S.home, away: S.away, control: S.control, speed: S.speed, view: S.view, cam: S.cam, cam2d: S.cam2d, names: S.names, autoReplay: S.autoReplay, hl: S.hl, hlGap: S.hlGap, hlSpeed: S.hlSpeed, fastDead: S.fastDead, model: S.model, mode: S.mode, homeAdv: S.homeAdv, cur: S.cur, uiAccent: S.uiAccent, uiBg: S.uiBg, pitchTheme: S.pitchTheme, pitchColor: S.pitchColor, pitchPattern: S.pitchPattern, zoom: S.zoom, ballSize: S.ballSize, panels: S.panels, pitchAlways: S.pitchAlways, auto2d: S.auto2d, v3: 1 });
+const savePrefs = () => LS.set('draftxi.prefs.v1', { home: S.home, away: S.away, control: S.control, speed: S.speed, view: S.view, cam: S.cam, cam2d: S.cam2d, names: S.names, autoReplay: S.autoReplay, hl: S.hl, hlGap: S.hlGap, hlSpeed: S.hlSpeed, fastDead: S.fastDead, model: S.model, plScale: S.plScale, mode: S.mode, homeAdv: S.homeAdv, cur: S.cur, uiAccent: S.uiAccent, uiBg: S.uiBg, pitchTheme: S.pitchTheme, pitchColor: S.pitchColor, pitchPattern: S.pitchPattern, zoom: S.zoom, ballSize: S.ballSize, panels: S.panels, pitchAlways: S.pitchAlways, auto2d: S.auto2d, v3: 1 });
 // ---------- 색상 (UI·경기장) ----------
 const UI_BG = {
   graphite: ['기본(그래파이트)', { '--bg': '#0b0d11', '--panel': '#13161c', '--panel2': '#1a1e26', '--line': '#2a303b', '--line2': '#39414f' }],
@@ -788,7 +788,7 @@ function lineupTab(ctx) {
     if (live && !lp) { const gone = live.T.all.find(q => q.slot === i && q.sentOff); pitch.append(h('div', { class: 'slot gone', style: { left: (50 + s[2] * 41) + '%', top: (95 - s[1] * 92) + '%' } }, h('span', { class: 'disc' }, '✕'), h('span', { class: 'nm' }, gone ? shortName(gone.name) : '빈 자리'), h('span', { class: 'meta' }, gone ? '퇴장' : '선수 없음'))); return; }
     const ic = IPF[i][0]; const lv = p ? E.famLevel(p, ic) : 3; const rt = p ? E.posRating(p, ic) : null;
     const susp = ctx.unavail && p && ctx.unavail.has(p.id);
-    const btn = h('button', { class: 'slot ' + ['fam-x', 'fam-bad', 'fam-mid', ''][lv], 'data-si': i, 'aria-pressed': String(S.selSlot === i), style: { left: (50 + s[2] * 41) + '%', top: (95 - s[1] * 92) + '%' }, title: p ? `${p.name} (대표 ${posLabel(p.pos)} ${D.calcOvr(p.stats, p.pos)}) — ${posLabel(s[0])} 자리 능력치 ${rt} · ${FAM_LBL[lv]} · 끌어서 다른 선수 위에 놓으면 서로 자리 교체, 빈 곳에 놓으면 위치 이동` : posLabel(s[0]) },
+    const btn = h('button', { class: 'slot ' + ['fam-x', 'fam-bad', 'fam-mid', ''][lv], 'data-si': i, 'aria-pressed': String(S.selSlot === i), style: { left: (50 + s[2] * 41) + '%', top: (95 - s[1] * 92) + '%' }, title: p ? `${p.name} (대표 ${posLabel(p.pos)} ${D.calcOvr(p.stats, p.pos)}) — ${posLabel(s[0])} 자리 능력치 ${rt} · ${FAM_LBL[lv]} · 원형: 포지션·역할 편집 / 이름: 능력치 보기 / 끌어서 다른 선수 위에 놓으면 자리 교체, 빈 곳에 놓으면 위치 이동` : posLabel(s[0]) },
       h('span', { class: 'disc', style: { background: s[0] === 'GK' ? '#f2d03d' : team.color1, color: s[0] === 'GK' ? '#111' : ink(team.color1), borderColor: susp ? '#e46a5a' : team.color2 } }, live && lp ? lp.num : (p ? rt : '?')),
       lp ? h('span', { class: 'en' }, h('i', { style: { width: lp.energy + '%', background: lp.energy < 60 ? 'var(--bad)' : lp.energy < 75 ? 'var(--warn)' : 'var(--good)' } })) : null,
       h('span', { class: 'nm' }, live && lp ? shortName(lp.name) : (p ? shortName(p.name) : '비어 있음')),
@@ -818,7 +818,8 @@ function lineupTab(ctx) {
       E.normRoles(setup); if (live) E.refreshCodes(live.T);
       btn.dataset.dragged = '1'; ctx.onChange();
     });
-    btn.addEventListener('click', e => { if (btn.dataset.dragged) { delete btn.dataset.dragged; return; } slotClick(ctx, i); });
+    // 원형(번호·능력치)을 누르면 포지션·역할 편집, 이름을 누르면 다른 화면과 같은 선수 능력치 팝업
+    btn.addEventListener('click', e => { if (btn.dataset.dragged) { delete btn.dataset.dragged; return; } const pid = live && lp ? (lp.d && lp.d.id) : (p && p.id); if (e.target.closest && e.target.closest('.nm') && pid != null) { e.stopPropagation(); return openPlayerRef(pid); } slotClick(ctx, i); });
     pitch.append(btn);
   });
   if (S.tacView === 'shape') left.append(shapeView(ctx));
@@ -1426,7 +1427,7 @@ function initRenderers() {
   try { R3 = new Render3D(c3); } catch (e) { R3 = null; if (S.view === '3d') { S.view = '2d'; toast('이 기기에서는 3D를 사용할 수 없어 2D로 표시합니다.'); } }
   R2 = new Render2D(c2);
   L.pitch = pitchStyle();
-  if (R3) { R3.setMode(S.cam); R3.setKits(L.kits); R3.setModel(S.model, modelState); R3.setPitch(L.pitch); R3.setBallSize(S.ballSize || 1); }
+  if (R3) { R3.setMode(S.cam); R3.setKits(L.kits); R3.setModel(S.model, modelState); R3.setPitch(L.pitch); R3.setBallSize(S.ballSize || 1); if (R3.setPlayerScale) R3.setPlayerScale(S.plScale || 1.15); }
   c2.addEventListener('click', ev => pickPlayer2D(ev));
   c3.addEventListener('click', ev => { if (R3 && R3.mode !== 'free') pickPlayer3D(ev); });
   applyViewVisibility(); resizeView();
@@ -1887,7 +1888,7 @@ function simToEnd() {
 }
 function onMatchEnd() {
   if (L.ctx.type === 'league' && !L.recorded) { L.recorded = true; recordLeagueResult(L.ctx, E.summary(M)); }
-  if (L.ctx.type === 'career' && !L.recorded && window.Manager) { L.recorded = true; Manager.onMatchDone(L.ctx, SUM(M), Object.assign({}, L.rpBase, { ops: M.opsLog })); }
+  if (L.ctx.type === 'career' && !L.recorded && window.Manager) { L.recorded = true; const sm = SUM(M); if (window.DXC && DXC.matchDetail) sm.dt = DXC.matchDetail(M); Manager.onMatchDone(L.ctx, sm, Object.assign({}, L.rpBase, { ops: M.opsLog })); }
 }
 
 // ================= 리그 =================
@@ -2032,7 +2033,7 @@ function pump() {
 }
 function runLocal(job, cb) {
   const Mx = E.createMatch({ seed: job.seed, neutral: !!job.neutral, big: !!job.big, weather: job.weather, teams: [{ team: job.home, setup: job.hs, condition: job.hc }, { team: job.away, setup: job.as, condition: job.ac }], aiSides: [0, 1] });
-  const chunk = () => { const t0 = performance.now(); while (!Mx.ended && performance.now() - t0 < 30) for (let i = 0; i < 200 && !Mx.ended; i++) E.step(Mx); if (Mx.ended) cb(SUM(Mx)); else setTimeout(chunk, 0); };
+  const chunk = () => { const t0 = performance.now(); while (!Mx.ended && performance.now() - t0 < 30) for (let i = 0; i < 200 && !Mx.ended; i++) E.step(Mx); if (Mx.ended) { const rs = SUM(Mx); if (job.detail && window.DXC && DXC.matchDetail) rs.dt = DXC.matchDetail(Mx); cb(rs); } else setTimeout(chunk, 0); };
   setTimeout(chunk, 0);
 }
 function simJob(job) { poolInit(); return new Promise(res => { job.id = ++Pool.seq; Pool.cb.set(job.id, res); Pool.queue.push(job); pump(); }); }
@@ -2379,6 +2380,7 @@ function viewSettings() {
     line('3D 선수 모델', seg([['human', '사람 모델'], ['simple', '단순 모델']], S.model, v => { S.model = v; savePrefs(); render(true); }), '사람 모델이 끊기면 단순 모델을 쓰세요.'),
     line('선수 이름 표시', seg([['none', '숨김'], ['carrier', '볼 보유자'], ['all', '모두']], S.names, v => { S.names = v; savePrefs(); render(true); })),
     line('골 자동 리플레이', seg([[true, '켜기'], [false, '끄기']], S.autoReplay, v => { S.autoReplay = v; savePrefs(); render(true); })),
+    line('3D 선수 크기', seg([[1, '실제 크기'], [1.15, '1.15배'], [1.3, '1.3배']], S.plScale || 1.15, v => { S.plScale = v; savePrefs(); render(true); }), '멀리서 잡는 카메라에서 선수가 너무 작게 보이면 키우세요.'),
     line('3D 공 크기', seg([[1, '실제 크기'], [1.4, '1.4배'], [1.8, '1.8배']], S.ballSize, v => { S.ballSize = v; savePrefs(); render(true); }), '실제 공은 지름 22cm라 먼 카메라에서는 작게 보입니다.'),
     hlControls(false)));
   const swatch = (c, on, label, f) => h('button', { class: 'swatch' + (on ? ' on' : ''), style: { background: c }, title: label, 'aria-label': label, 'aria-pressed': String(on), onclick: f });

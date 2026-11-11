@@ -31,7 +31,7 @@ async function playQuick(f) {
   const t = T(); if (RUN.busy) return toast('다른 경기를 계산하는 중입니다.');
   modal(h('div', { class: 'stack' }, h('h2', null, '경기 계산 중'), h('div', { class: 'meter' }, h('i', { id: 'dxrunbar', style: { width: '0%' } })), h('div', { class: 'hint', id: 'dxrun' }, f ? `${tm(f.h).name} vs ${tm(f.a).name}` : '')), true);
   const others = simOthers(t, f ? f.i : -1);
-  if (f && !f.r) { const { job } = C.buildJob(t, f); const res = await TL.simJob(clone(job)); C.applyResult(t, f, res, { hs: TL.packSetup(job.hs), as: TL.packSetup(job.as) }); persist(); }
+  if (f && !f.r) { const { job } = C.buildJob(t, f); const jb = clone(job); jb.detail = true; const res = await TL.simJob(jb); C.applyResult(t, f, res, { hs: TL.packSetup(job.hs), as: TL.packSetup(job.as) }); persist(); }
   await others; closeModal(); finishDay();
 }
 function onMatchDone(ctx, summary, rp) {
@@ -196,7 +196,7 @@ function viewHub() {
   if (lastDay) right.append(panel(`${lastDay.label} 결과`, h('button', { class: 'btn sm', onclick: () => TL.go('m_fix') }, '일정·결과'), h('div', { class: 'dx-fxlist' }, ...lastDay.fx.map(i => t.fx[i]).filter(x => x.r).slice(0, 10).map(x => fxRow(x, true)))));
   const ld = leaders('g', 5), la = leaders('avg', 5);
   if (ld.length) right.append(h('div', { class: 'dx-two' }, panel('득점 순위', h('button', { class: 'btn sm', onclick: () => { U.statKey = 'g'; TL.go('m_stats'); } }, '더 보기'), ...ld), panel('평점 순위', null, ...(la.length ? la : [h('span', { class: 'dim' }, '경기 수가 더 필요합니다.')]))));
-  const left = h('div', { class: 'stack' }, main, myCard, panel('소식', null, h('div', { class: 'dx-news' }, ...(t.news || []).slice(0, 8).map(n => h('div', { class: 'nw ' + n.type }, h('span', { class: 'dim num' }, n.type === 'draft' ? '드래프트' : (t.days[Math.min(n.day, t.days.length - 1)] || {}).label || ''), h('span', null, n.text))))));
+  const left = h('div', { class: 'stack' }, main, U.hasReview && U.hasReview() ? h('button', { class: 'btn dx-rvbtn', onclick: () => TL.go('m_review') }, h('b', null, '직전 경기 분석'), h('span', { class: 'dim' }, '히트맵 · 패스맵 · 팀 지표 비교 · 선수별 평가 →')) : null, myCard, panel('소식', null, h('div', { class: 'dx-news' }, ...(t.news || []).slice(0, 8).map(n => h('div', { class: 'nw ' + n.type }, h('span', { class: 'dim num' }, n.type === 'draft' ? '드래프트' : (t.days[Math.min(n.day, t.days.length - 1)] || {}).label || ''), h('span', null, n.text))))));
   w.append(h('div', { class: 'dx-title' }, h('div', null, h('div', { class: 'lbl' }, `${C.FORMATS[t.cfg.format].n} · ${t.cfg.n}팀 · ${C.DRAFT_MODES[t.cfg.draftMode].n}`), h('h1', null, t.name)), h('div', { class: 'row' }, h('span', { class: 'dx-chip' }, done ? '종료' : `${day.label} (${Math.min(t.day + 1, t.days.length)}/${t.days.length}${t.cfg.format === 'league' ? '' : '+'})`), h('button', { class: 'btn sm ghost', onclick: () => confirmBox('이 대회를 포기하고 새 대회 설정으로 갈까요? 진행 중인 대회는 사라집니다.', () => { U.archiveCur(); U.cfg = null; TL.go('m_new'); }, '새 대회') }, '새 대회'))),
     h('div', { class: 'dx-hub' }, left, right));
   if (U.showRound != null) { const idx = U.showRound; U.showRound = null; setTimeout(() => { if (!document.querySelector('.modal')) roundModal(idx); }, 30); }
@@ -333,11 +333,11 @@ const view = screen => {
   if (!t) return U.viewLanding();
   if (screen === 'm_draft') return t.phase === 'draft' ? U.viewDraft() : viewBoard();
   if (t.phase === 'draft') return U.viewDraft();
-  return ({ m_home: viewHub, m_squad: viewSquad, m_tactics: viewTactics, m_fix: viewFix, m_table: viewTable, m_stats: viewStats, m_board: viewBoard }[screen] || viewHub)();
+  return ({ m_home: viewHub, m_squad: viewSquad, m_tactics: viewTactics, m_fix: viewFix, m_table: viewTable, m_stats: viewStats, m_board: viewBoard, m_review: () => (U.viewReview ? U.viewReview() : viewHub()) }[screen] || viewHub)();
 };
 G.Manager = {
   init() { U.load().then(() => { TL.render(); }); },
-  navItems() { const t = T(); if (!U.isLoaded() || !t) return [['m_home', '홈'], ['m_new', '새 대회']]; if (t.phase === 'draft') return [['m_draft', '드래프트 룸']]; const it = [['m_home', '홈'], ['m_squad', '스쿼드'], ['m_tactics', '전술'], ['m_fix', '일정·결과'], ['m_table', t.cfg.format === 'ko' ? '대진' : '순위·대진'], ['m_stats', '기록'], ['m_board', '드래프트 보드']]; if (TL.M) it.push(['match', '경기']); return it; },
+  navItems() { const t = T(); if (!U.isLoaded() || !t) return [['m_home', '홈'], ['m_new', '새 대회']]; if (t.phase === 'draft') return [['m_draft', '드래프트 룸']]; const it = [['m_home', '홈'], ['m_squad', '스쿼드'], ['m_tactics', '전술'], ['m_review', '경기 분석'], ['m_fix', '일정·결과'], ['m_table', t.cfg.format === 'ko' ? '대진' : '순위·대진'], ['m_stats', '기록'], ['m_board', '드래프트 보드']]; if (TL.M) it.push(['match', '경기']); return it; },
   view, hasPlayer: id => !!(T() && T().players[id]), showPlayer, onMatchDone,
   homeCard: () => h('span'),
   async storageInfo() { const s = U.SAVE(); if (!s.cur && !s.archive.length) return null; return { bytes: U.ser().length * 2, where: U.where() === 'idb' ? '브라우저 저장소' : '로컬 저장소' }; },

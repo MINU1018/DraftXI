@@ -1,6 +1,7 @@
 // ===== 2D 바둑알 렌더러 =====
 (function (G) {
 const HL = 52.5, HW = 34;
+const SKIN = ['#f0d2b4', '#e2b890', '#c99870', '#9a6a48', '#6e4a32', '#e8c4a2'];
 class Render2D {
   constructor(canvas) { this.c = canvas; this.ctx = canvas.getContext('2d'); this.mode = 'full'; this.view = { cx: 0, cy: 0, z: 1 }; }
   resize() { const r = this.c.getBoundingClientRect(); const d = Math.min(2, window.devicePixelRatio || 1); this.c.width = Math.max(10, r.width * d); this.c.height = Math.max(10, r.height * d); this.dpr = d; }
@@ -42,22 +43,37 @@ class Render2D {
     }
     { const q = P(0, 0); x.beginPath(); x.arc(q[0], q[1], 9.15 * sc, 0, 7); x.stroke(); }
     // 선수
-    const R = Math.max(9, sc * 1.3);
+    const R = Math.max(9, sc * 1.3); const now = performance.now(); this.dtv = Math.min(.05, (now - (this.lastT || now)) / 1000) * (opt.rate == null ? 1 : Math.min(4, opt.rate)); this.lastT = now; this.ph = this.ph || {};
     const order = F.players.map((p, i) => i).filter(i => !F.players[i].hidden);
     for (const i of order) {
       const p = F.players[i]; const inf = info(p.pid); if (!inf) continue;
       const [sx, sy] = P(p.x, p.y);
       x.fillStyle = 'rgba(0,0,0,.28)'; x.beginPath(); x.ellipse(sx + R * .15, sy + R * .25, R, R * .8, 0, 0, 7); x.fill();
       const body = inf.gk ? inf.gkColor : inf.c1;
-      x.fillStyle = body; x.beginPath(); x.arc(sx, sy, R, 0, 7); x.fill();
+      const ang = vertical ? Math.atan2(-Math.cos(p.face), -Math.sin(p.face)) : Math.atan2(-Math.sin(p.face), Math.cos(p.face));
+      // 위에서 본 사람 형태: 어깨(몸통) + 머리 + 두 발. 발은 속도에 맞춰 번갈아 나가고, 킥·준비 동작·스텝오버·태클이 보임
+      const spd = p.speed || 0, a = p.anim, t = p.animT || 0;
+      const ph = (this.ph[p.pid] = (this.ph[p.pid] || p.pid) + (this.dtv || .016) * (3 + spd * 1.9));
+      const st = Math.min(1, spd / 5.5) * R * .78;
+      let fl = Math.sin(ph) * st, fr = -Math.sin(ph) * st, ll = -R * .42, lr = R * .42, lean = 0, long = 1, wide = 1;
+      if (a === 14) { fr = -R * 1.0 * Math.min(1, t / .16); fl = R * .3; }
+      else if (a === 1 && t < .45) { const k = Math.sin(t / .45 * Math.PI); fr = R * 1.5 * k; fl = -R * .2 * k; }
+      else if (a === 15 && t < .75) { const w = t * 10; fr = R * (.55 + .5 * Math.cos(w)); lr = R * (.2 + .55 * Math.sin(w)); fl = R * (.55 - .5 * Math.cos(w)) * .6; ll = -R * (.2 + .45 * Math.sin(w + 1.6)); lean = Math.sin(w) * .25; }
+      else if (a === 3 && t < 1.1) { long = 1.9; wide = .7; fr = R * 1.9; fl = R * 1.2; }
+      else if ((a === 4 || a === 5 || a === 11 || a === 12) && t < 1.9) { wide = 1.7; long = .75; }
+      else if (a === 2 && t < .6) { fr = R * 1.1; wide = 1.25; }
+      else if (a === 6 && t < .7) { long = 1.15; wide = 1.15; }
+      else if (a === 7 && t < 1.4) { long = 1.8; wide = .8; }
+      x.save(); x.translate(sx, sy); x.rotate(ang + lean);
+      x.fillStyle = '#16191b'; x.beginPath(); x.ellipse(fl, ll, R * .36, R * .2, 0, 0, 7); x.fill(); x.beginPath(); x.ellipse(fr, lr, R * .36, R * .2, 0, 0, 7); x.fill();
+      if (a === 8) { x.strokeStyle = body; x.lineWidth = R * .3; x.beginPath(); x.moveTo(0, -R * .9); x.lineTo(R * .5, -R * 1.5); x.moveTo(0, R * .9); x.lineTo(R * .5, R * 1.5); x.stroke(); }
+      x.fillStyle = body; x.beginPath(); x.ellipse(long > 1 ? R * (long - 1) * .5 : 0, 0, R * .74 * long, R * wide, 0, 0, 7); x.fill();
       x.lineWidth = Math.max(1.5, R * .18); x.strokeStyle = inf.c2; x.stroke();
-      if (opt.selected === p.pid) { x.lineWidth = 2.5; x.strokeStyle = '#f2b33d'; x.beginPath(); x.arc(sx, sy, R + 4, 0, 7); x.stroke(); }
-      // 방향 표시
-      const fa = vertical ? -p.face - Math.PI / 2 : -p.face; // 화면 각도
-      const ang = vertical ? Math.atan2(-Math.cos(p.face), -Math.sin(p.face)) : Math.atan2(-Math.sin(p.face), Math.cos(p.face)); void fa;
-      x.fillStyle = inf.c2; x.beginPath(); x.arc(sx + Math.cos(ang) * R * .78, sy + Math.sin(ang) * R * .78, R * .2, 0, 7); x.fill();
+      x.fillStyle = SKIN[p.pid % SKIN.length]; x.beginPath(); x.arc(R * .5, 0, R * .34, 0, 7); x.fill(); x.lineWidth = 1; x.strokeStyle = 'rgba(0,0,0,.45)'; x.stroke();
+      x.restore();
+      if (opt.selected === p.pid) { x.lineWidth = 2.5; x.strokeStyle = '#f2b33d'; x.beginPath(); x.arc(sx, sy, R + 5, 0, 7); x.stroke(); }
       x.fillStyle = inf.textColor; x.font = `600 ${Math.round(R * 1.0)}px "Barlow Condensed", system-ui, sans-serif`; x.textAlign = 'center'; x.textBaseline = 'middle';
-      x.fillText(inf.num, sx, sy + R * .05);
+      x.fillText(inf.num, sx - Math.cos(ang) * R * .22, sy - Math.sin(ang) * R * .22 + R * .05);
       if (opt.names === 'all' || (opt.names === 'carrier' && opt.carrier === p.pid) || opt.selected === p.pid) {
         x.font = `500 ${Math.max(10, Math.round(R * .85))}px "IBM Plex Sans KR", system-ui, sans-serif`;
         const nm = inf.short; const tw = x.measureText(nm).width;
@@ -68,6 +84,9 @@ class Render2D {
     // 공
     const b = F.ball; const [bx, by] = P(b.x, b.y); const z = Math.max(0, b.z - .11);
     const br = Math.max(3.5, sc * .32) * (1 + z * .06);
+    // 빠른 공은 잔상을 남겨 속도와 휘는 궤적이 보이게 함
+    { const tr = this.trail || (this.trail = []); const lp = tr[tr.length - 1]; if (lp && Math.hypot(lp[0] - b.x, lp[1] - b.y) > 12) tr.length = 0; tr.push([b.x, b.y]); if (tr.length > 9) tr.shift();
+      const f0 = tr[0]; if (tr.length > 3 && Math.hypot(f0[0] - b.x, f0[1] - b.y) > 2.2) { x.lineCap = 'round'; for (let i = 1; i < tr.length; i++) { const q0 = P(tr[i - 1][0], tr[i - 1][1]), q1 = P(tr[i][0], tr[i][1]); x.strokeStyle = `rgba(255,255,255,${(.05 + .3 * i / tr.length).toFixed(2)})`; x.lineWidth = br * (.5 + .9 * i / tr.length); x.beginPath(); x.moveTo(q0[0], q0[1]); x.lineTo(q1[0], q1[1]); x.stroke(); } } }
     x.fillStyle = 'rgba(0,0,0,.35)'; x.beginPath(); x.arc(bx + z * sc * .25, by + z * sc * .35, br * .9, 0, 7); x.fill();
     x.fillStyle = '#ffffff'; x.beginPath(); x.arc(bx, by - z * sc * .15, br, 0, 7); x.fill();
     x.lineWidth = 1.2; x.strokeStyle = '#1b2420'; x.stroke();
