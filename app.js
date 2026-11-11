@@ -1467,7 +1467,7 @@ function buildCtrl() {
     h('div', { class: 'cmbox' },
       !done && L.ctx.type !== 'review' ? hlControls(false) : null,
       h('div', { class: 'row' }, h('span', { class: 'lbl' }, '화면'), seg([['3d', '3D'], ['2d', '2D']], S.view, v => { S.view = v; savePrefs(); applyViewVisibility(); resizeView(); buildCtrl(); }), camControls()),
-      S.view === '3d' && R3 ? h('div', { class: 'row' }, h('span', { class: 'lbl' }, '선수 모델'), sel([['human', '사람 모델'], ['xbot', '마네킹 모델(이전)'], ['simple', '단순 모델']], S.model, v => { S.model = v; savePrefs(); R3.setModel(v, modelState); }, 'model')) : null,
+      S.view === '3d' && R3 ? h('div', { class: 'row' }, h('span', { class: 'lbl' }, '선수 모델'), sel([['human', '사람 모델'], ['body', '조립형 모델'], ['xbot', '마네킹 모델'], ['simple', '단순 모델']], S.model, v => { S.model = v; savePrefs(); R3.setModel(v, modelState); }, 'model')) : null,
       h('div', { class: 'row' }, h('span', { class: 'lbl' }, '이름'), sel([['none', '이름 숨김'], ['carrier', '볼 보유자 이름'], ['all', '모든 이름']], S.names, v => { S.names = v; savePrefs(); $('#labels').innerHTML = ''; }, 'names'), seg([[0, '이름만'], [1, '이름 + 포지션']], S.posLbl ? 1 : 0, v => { S.posLbl = v; L.infoCache.clear(); savePrefs(); })),
       S.view === '3d' && R3 ? h('label', { class: 'row', style: { gap: '6px' } }, h('input', { type: 'checkbox', checked: S.auto2d !== false || null, onchange: e => { S.auto2d = e.target.checked; savePrefs(); } }), '빨리 감는 동안은 2D로 보기 (주요 장면·리플레이만 3D)') : null,
       h('label', { class: 'row', style: { gap: '6px' } }, h('input', { type: 'checkbox', checked: !!S.pitchAlways || null, onchange: e => { S.pitchAlways = e.target.checked; savePrefs(); } }), '하이라이트 사이에도 경기장 표시'),
@@ -2389,7 +2389,7 @@ function viewSettings() {
   const line = (label, ctl, hint) => h('div', { class: 'row' }, h('span', { class: 'lbl', style: { minWidth: '130px' } }, label), ctl, hint ? h('span', { class: 'hint' }, hint) : null);
   w.append(h('div', { class: 'card stack' }, h('h3', null, '경기 화면 기본값'),
     line('화면', seg([['3d', '3D'], ['2d', '2D 바둑알']], S.view, v => { S.view = v; savePrefs(); render(true); })),
-    line('3D 선수 모델', seg([['human', '사람 모델'], ['xbot', '마네킹(이전)'], ['simple', '단순 모델']], S.model, v => { S.model = v; savePrefs(); render(true); }), '사람 모델이 끊기면 단순 모델을 쓰세요.'),
+    line('3D 선수 모델', seg([['human', '사람 모델'], ['body', '조립형'], ['xbot', '마네킹'], ['simple', '단순 모델']], S.model, v => { S.model = v; savePrefs(); render(true); }), '사람 모델이 끊기면 단순 모델을 쓰세요.'),
     line('선수 이름 표시', seg([['none', '숨김'], ['carrier', '볼 보유자'], ['all', '모두']], S.names, v => { S.names = v; savePrefs(); render(true); })),
     line('이름 아래 포지션 표시', seg([[0, '끔'], [1, '켬']], S.posLbl ? 1 : 0, v => { S.posLbl = v; savePrefs(); render(true); }), '경기 화면에서 이름 밑에 현재 포지션(ST, DM 등)을 함께 보여 줍니다.'),
     line('골 자동 리플레이', seg([[true, '켜기'], [false, '끄기']], S.autoReplay, v => { S.autoReplay = v; savePrefs(); render(true); })),

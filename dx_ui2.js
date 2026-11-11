@@ -10,7 +10,7 @@ const clone = o => JSON.parse(JSON.stringify(o));
 const tm = m => T().mgrs[m].team;
 // 팀 이름은 어디서든 누르면 그 팀 정보 화면으로 이동 (data-team)
 const tn = (m, short, cls) => h('button', { type: 'button', class: 'linkbtn tn ' + (cls || ''), 'data-team': m, title: tm(m).name + ' 팀 정보 보기' }, short ? tm(m).short : tm(m).name);
-const tlogo = m => h('span', { class: 'dx-tl' }, badge(tm(m), 'xs'), tn(m, true, 'dim'));
+const tlogo = m => h('span', { class: 'dx-tlg' }, badge(tm(m), 'xs'), tn(m, true, 'dim'));
 const teamEl = (m, cls) => h('span', { class: 'dx-team ' + (cls || '') + (m === ME ? ' me' : '') }, badge(tm(m), 'sm'), tn(m));
 U.openTeam = m => { U.sqTeam = +m; U.sqTab = 'ov'; TL.closeAllModals && TL.closeAllModals(); if (TL.S.screen === 'm_squad') TL.render(); else TL.go('m_squad'); window.scrollTo(0, 0); };
 document.addEventListener('click', e => { const b = e.target.closest && e.target.closest('[data-team]'); if (!b || !T()) return; e.preventDefault(); e.stopPropagation(); U.openTeam(b.dataset.team); }, true);
@@ -201,7 +201,7 @@ function viewHub() {
   if (lastDay) right.append(panel(`${lastDay.label} 결과`, h('button', { class: 'btn sm', onclick: () => TL.go('m_fix') }, '일정·결과'), h('div', { class: 'dx-fxlist' }, ...lastDay.fx.map(i => t.fx[i]).filter(x => x.r).slice(0, 10).map(x => fxRow(x, true)))));
   const ld = leaders('g', 5), la = leaders('avg', 5);
   if (ld.length) right.append(h('div', { class: 'dx-two' }, panel('득점 순위', h('button', { class: 'btn sm', onclick: () => { U.statKey = 'g'; TL.go('m_stats'); } }, '더 보기'), ...ld), panel('평점 순위', null, ...(la.length ? la : [h('span', { class: 'dim' }, '경기 수가 더 필요합니다.')]))));
-  const left = h('div', { class: 'stack' }, main, U.hasReview && U.hasReview() ? h('button', { class: 'btn dx-rvbtn', onclick: () => TL.go('m_review') }, h('b', null, '직전 경기 분석'), h('span', { class: 'dim' }, '히트맵 · 패스맵 · 팀 지표 비교 · 선수별 평가 →')) : null, myCard, panel('소식', null, h('div', { class: 'dx-news' }, ...(t.news || []).slice(0, 8).map(n => h('div', { class: 'nw ' + n.type }, h('span', { class: 'dim num' }, n.type === 'draft' ? '드래프트' : (t.days[Math.min(n.day, t.days.length - 1)] || {}).label || ''), h('span', null, n.text))))));
+  const left = h('div', { class: 'stack' }, main, U.hasReview && U.hasReview() ? h('button', { class: 'btn dx-rvbtn', onclick: () => TL.go('m_review') }, h('b', null, '경기 분석'), h('span', { class: 'dim' }, '지난 경기 전부 · 히트맵 · 패스맵 · 팀 지표 비교 · 선수별 평가 →')) : null, myCard, panel('소식', null, h('div', { class: 'dx-news' }, ...(t.news || []).slice(0, 8).map(n => h('div', { class: 'nw ' + n.type }, h('span', { class: 'dim num' }, n.type === 'draft' ? '드래프트' : (t.days[Math.min(n.day, t.days.length - 1)] || {}).label || ''), h('span', null, n.text))))));
   w.append(h('div', { class: 'dx-title' }, h('div', null, h('div', { class: 'lbl' }, `${C.FORMATS[t.cfg.format].n} · ${t.cfg.n}팀 · ${C.DRAFT_MODES[t.cfg.draftMode].n}`), h('h1', null, t.name)), h('div', { class: 'row' }, h('span', { class: 'dx-chip' }, done ? '종료' : `${day.label} (${Math.min(t.day + 1, t.days.length)}/${t.days.length}${t.cfg.format === 'league' ? '' : '+'})`), h('button', { class: 'btn sm ghost', onclick: () => confirmBox('이 대회를 포기하고 새 대회 설정으로 갈까요? 진행 중인 대회는 사라집니다.', () => { U.archiveCur(); U.cfg = null; TL.go('m_new'); }, '새 대회') }, '새 대회'))),
     h('div', { class: 'dx-hub' }, left, right));
   if (U.showRound != null) { const idx = U.showRound; U.showRound = null; setTimeout(() => { if (!document.querySelector('.modal')) roundModal(idx); }, 30); }

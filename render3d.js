@@ -37,7 +37,9 @@ function loadHumanModel() {
     }
     if (!clips.idle || !clips.walk || !clips.run) throw new Error('clips');
     gltf.scene.traverse(o => { if (o.isSkinnedMesh) { o.castShadow = true; o.frustumCulled = false; } });
-    return { scene: gltf.scene, clips };
+    const base = { scene: gltf.scene, clips };
+    try { if (!G.HUMAN_MODEL) await loadScript('lib/human.js'); if (G.HUMAN_MODEL) base.scan = buildScanTemplate(G.HUMAN_MODEL, clips); } catch (e) { console.warn('scan model failed', e); }
+    return base;
   })();
   return modelPromise;
 }
@@ -54,20 +56,54 @@ const KIT_GLSL = `
   if (!arm && P.z < -0.03 && P.y > 1.04 && P.y < 1.4 && ax < 0.17) { vec4 t = texture2D(uNum, vec2((0.17 - P.x) / 0.34, (P.y - 1.04) / 0.36)); kc = mix(kc, pow(t.rgb, vec3(2.2)), t.a); }
   if (!arm && P.z > 0.03 && P.y > 1.28 && P.y < 1.38 && P.x > 0.06 && P.x < 0.13) kc = mix(kc, uShorts, 0.85);
   diffuseColor.rgb = kc;`;
-function kitMaterial(inf, numTex) {
+// 사람 모델(lib/human.js)용 유니폼 구역. 좌표는 T자세 기준 미터(키 1.80)
+const KIT_GLSL2 = `
+  vec3 P = vBind; float ax = abs(P.x); vec3 kc = uShirt; bool arm = ax > 0.27 && P.y > 1.25;
+  if (!arm && (P.y > 1.565 || (P.y > 1.5 && ax < 0.085 + (P.y - 1.5) * 0.3))) { kc = uSkin; if (P.y > 1.705 + P.z * 0.55 || (P.y > 1.585 && P.z < -0.055)) kc = uHair; }
+  else if (arm) { if (uGK > 0.5) kc = ax > 0.64 ? uGlove : uShirt; else kc = ax > 0.40 ? uSkin : (ax > 0.378 ? uShorts : uShirt); }
+  else if (P.y > 1.482 && ax < 0.12) kc = uShorts;
+  else if (P.y > 0.99) kc = uShirt;
+  else if (P.y > 0.68) kc = uShorts;
+  else if (P.y > 0.47) kc = uSkin;
+  else if (P.y > 0.44) kc = uShorts;
+  else if (P.y > 0.105) kc = uSock;
+  else kc = uBoot;
+  if (!arm && P.z < -0.06 && P.y > 1.10 && P.y < 1.42 && ax < 0.16) { vec4 t = texture2D(uNum, vec2((0.16 - P.x) / 0.32, (P.y - 1.10) / 0.32)); kc = mix(kc, pow(t.rgb, vec3(2.2)), t.a); }
+  if (!arm && P.z > 0.03 && P.y > 1.355 && P.y < 1.405 && P.x > 0.075 && P.x < 0.12) kc = mix(kc, uShorts, 0.85);
+  diffuseColor.rgb = kc;`;
+// lib/human.js 데이터로 스킨 메시와 뼈대를 만든다. 뼈는 모두 월드 축에 정렬된 바인드 자세라 내장 애니메이션(달리기 등)을 그대로 쓸 수 있음
+function buildScanTemplate(D, clips) {
+  const dec = (b, T) => { const str = atob(b); const u = new Uint8Array(str.length); for (let i = 0; i < str.length; i++) u[i] = str.charCodeAt(i); return new T(u.buffer); };
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(dec(D.pos, Float32Array), 3)); geo.setAttribute('normal', new THREE.BufferAttribute(dec(D.nor, Float32Array), 3));
+  geo.setAttribute('skinIndex', new THREE.BufferAttribute(new Uint16Array(dec(D.ji, Uint8Array)), 4)); geo.setAttribute('skinWeight', new THREE.BufferAttribute(dec(D.jw, Float32Array), 4));
+  geo.setIndex(new THREE.BufferAttribute(dec(D.idx, Uint16Array), 1));
+  const bones = D.bones.map(b => { const o = new THREE.Bone(); o.name = b[0]; return o; });
+  const scene = new THREE.Group();
+  D.bones.forEach((b, i) => { const pp = b[1] >= 0 ? D.bones[b[1]] : null; bones[i].position.set(b[2] - (pp ? pp[2] : 0), b[3] - (pp ? pp[3] : 0), b[4] - (pp ? pp[4] : 0)); if (pp) bones[b[1]].add(bones[i]); else scene.add(bones[i]); });
+  const mesh = new THREE.SkinnedMesh(geo, new THREE.MeshStandardMaterial({ skinning: true })); mesh.name = 'Human_Surface'; mesh.frustumCulled = false; mesh.castShadow = true; scene.add(mesh);
+  scene.updateMatrixWorld(true); mesh.bind(new THREE.Skeleton(bones));
+  // 애니메이션: 엉덩이 높이만 이 모델 치수에 맞춤(내장 모델은 cm 단위)
+  const hip = D.bones.find(b => b[0] === 'mixamorigHips'); const names = new Set(D.bones.map(b => b[0])); const out = {};
+  for (const k of ['idle', 'walk', 'run']) { const c = clips[k].clone(); c.tracks = c.tracks.filter(t => names.has(t.name.split('.')[0]));
+    for (const t of c.tracks) if (/Hips\.position$/.test(t.name)) { const v = t.values, y0 = v[1] || 104; for (let i = 0; i < v.length; i += 3) { v[i] = hip[2]; v[i + 1] = v[i + 1] / y0 * hip[3]; v[i + 2] = hip[4]; } }
+    out[k] = c; }
+  return { scene, clips: out, scan: true };
+}
+function kitMaterial(inf, numTex, scan) {
   const gk = inf.gk;
   const U = {
     uShirt: { value: lin(gk ? inf.gkColor : inf.c1) }, uShorts: { value: lin(gk ? '#1b1f24' : inf.c2) }, uSock: { value: lin(gk ? inf.gkColor : inf.c1) },
-    uSkin: { value: new THREE.Color(SKIN[inf.skin % SKIN.length]).convertSRGBToLinear() }, uBoot: { value: lin('#16181c') }, uHair: { value: lin(['#1a1410', '#2b1d14', '#4a3020', '#6b4a2a', '#c9a46a', '#0e0e10'][(inf.skin * 7 + (inf.num | 0)) % 6]) }, uGlove: { value: lin('#e9eef2') },
+    uSkin: { value: new THREE.Color(SKIN[inf.skin % SKIN.length]).convertSRGBToLinear() }, uBoot: { value: lin(scan ? BOOTS[((inf.pid | 0) * 5 + (inf.num | 0)) % BOOTS.length] : '#16181c') }, uHair: { value: lin(['#1a1410', '#2b1d14', '#4a3020', '#6b4a2a', '#c9a46a', '#0e0e10'][(inf.skin * 7 + (inf.num | 0)) % 6]) }, uGlove: { value: lin('#e9eef2') },
     uNum: { value: numTex }, uGK: { value: gk ? 1 : 0 }
   };
   const m = new THREE.MeshStandardMaterial({ roughness: .78, metalness: 0, skinning: true });
   m.onBeforeCompile = sh => {
     Object.assign(sh.uniforms, U);
     sh.vertexShader = 'varying vec3 vBind;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n vBind = position;');
-    sh.fragmentShader = 'varying vec3 vBind; uniform vec3 uShirt, uShorts, uSock, uSkin, uBoot, uGlove, uHair; uniform sampler2D uNum; uniform float uGK;\n' + sh.fragmentShader.replace('#include <color_fragment>', '#include <color_fragment>\n' + KIT_GLSL);
+    sh.fragmentShader = 'varying vec3 vBind; uniform vec3 uShirt, uShorts, uSock, uSkin, uBoot, uGlove, uHair; uniform sampler2D uNum; uniform float uGK;\n' + sh.fragmentShader.replace('#include <color_fragment>', '#include <color_fragment>\n' + (scan ? KIT_GLSL2 : KIT_GLSL));
   };
-  m.customProgramCacheKey = () => 'kit-v1';
+  m.customProgramCacheKey = () => scan ? 'kit-v2' : 'kit-v1';
   return m;
 }
 // ===== 사람 형태 몸체 =====
@@ -174,7 +210,7 @@ class Render3D {
   // 'human' | 'simple'
   // kind: 'human'(사람 형태) | 'xbot'(내장 마네킹) | 'simple'
   setModel(kind, onState) {
-    const st = kind === 'xbot' ? 'xbot' : 'body'; if (kind === 'xbot') kind = 'human'; if (st !== this.humanStyle) { this.humanStyle = st; if (this.tpl) this.clearPlayers(); }
+    const st = kind === 'xbot' ? 'xbot' : kind === 'body' ? 'body' : 'scan'; if (kind === 'xbot' || kind === 'body') kind = 'human'; if (st !== this.humanStyle) { this.humanStyle = st; if (this.tpl) this.clearPlayers(); }
     this.modelKind = kind;
     if (kind !== 'human') { if (this.tpl || this.modelState !== 'none') this.clearPlayers(); this.modelState = 'none'; return; }
     if (this.tpl) { this.clearPlayers(); this.modelState = 'ready'; return; }
@@ -451,7 +487,9 @@ class Render3D {
     return canvasTex(64, 64, (c, w, h) => { c.fillStyle = inf.textColor; c.font = '700 46px "Barlow Condensed", sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(inf.num, w / 2, h / 2 + 2); });
   }
   makePlayer(inf) {
-    if (this.modelKind === 'human' && this.tpl) { try { return this.makeHuman(inf); } catch (e) { console.warn('human player failed', e); this.modelKind = 'simple'; } }
+    if (this.modelKind === 'human' && this.tpl) {
+      try { return this.makeHuman(inf); } catch (e) { console.warn('human player failed', e); if (this.humanStyle === 'scan') { this.humanStyle = 'body'; try { return this.makeHuman(inf); } catch (e2) { console.warn(e2); } } this.modelKind = 'simple'; }
+    }
     const g = new THREE.Group(); const body = new THREE.Group(); g.add(body);
     const shirt = new THREE.MeshStandardMaterial({ color: new THREE.Color(inf.gk ? inf.gkColor : inf.c1), roughness: .7 });
     const shorts = new THREE.MeshStandardMaterial({ color: new THREE.Color(inf.gk ? '#1b1f24' : inf.c2), roughness: .8 });
@@ -489,18 +527,20 @@ class Render3D {
   }
   makeHuman(inf) {
     const g = new THREE.Group(); const body = new THREE.Group(); g.add(body);
-    const root = THREE.SkeletonUtils.clone(this.tpl.scene); body.add(root);
+    const useScan = this.humanStyle === 'scan' && this.tpl.scan; const T0 = useScan ? this.tpl.scan : this.tpl;
+    const root = THREE.SkeletonUtils.clone(T0.scene); body.add(root);
     let mat = null, built = false;
     // 기본: 직접 만든 사람 형태 몸체. 실패하거나 '마네킹'을 고르면 내장 모델에 유니폼 색만 입힘
-    if (this.humanStyle !== 'xbot') { try { buildBody(root, inf, this.numTexture(inf)); built = true; root.traverse(o => { if (o.isSkinnedMesh) { o.visible = false; o.castShadow = false; } }); } catch (e) { console.warn('body build failed', e); root.traverse(o => { if (o.isMesh && /^body_/.test(o.name) && o.parent) o.parent.remove(o); }); } }
+    if (useScan) { mat = kitMaterial(inf, this.numTexture(inf), true); built = true; root.traverse(o => { if (o.isSkinnedMesh) { o.material = mat; o.castShadow = true; o.frustumCulled = false; } }); }
+    else if (this.humanStyle !== 'xbot') { try { buildBody(root, inf, this.numTexture(inf)); built = true; root.traverse(o => { if (o.isSkinnedMesh) { o.visible = false; o.castShadow = false; } }); } catch (e) { console.warn('body build failed', e); root.traverse(o => { if (o.isMesh && /^body_/.test(o.name) && o.parent) o.parent.remove(o); }); } }
     if (!built) { mat = kitMaterial(inf, this.numTexture(inf)); root.traverse(o => { if (o.isSkinnedMesh) { o.visible = true; o.material = mat; o.castShadow = !/Joints/.test(o.name); o.frustumCulled = false; } }); }
     const bone = n => root.getObjectByName('mixamorig' + n) || root.getObjectByName('mixamorig:' + n);
     const B = {}; for (const n of ['Hips', 'Spine', 'Spine1', 'LeftUpLeg', 'RightUpLeg', 'LeftLeg', 'RightLeg', 'LeftArm', 'RightArm', 'LeftForeArm', 'RightForeArm', 'Neck']) B[n] = bone(n);
     const mixer = new THREE.AnimationMixer(root);
-    const acts = {}; for (const k of ['idle', 'walk', 'run']) { const a = mixer.clipAction(this.tpl.clips[k]); a.play(); a.setEffectiveWeight(k === 'idle' ? 1 : 0); acts[k] = a; }
+    const acts = {}; for (const k of ['idle', 'walk', 'run']) { const a = mixer.clipAction(T0.clips[k]); a.play(); a.setEffectiveWeight(k === 'idle' ? 1 : 0); acts[k] = a; }
     acts.idle.time = Math.random() * 2;
     this.addMarkers(g);
-    g.userData = Object.assign(g.userData, { kind: 'human', body, root, mixer, acts, B, w: { idle: 1, walk: 0, run: 0 }, pid: inf.pid, mat, built });
+    g.userData = Object.assign(g.userData, { kind: 'human', body, root, mixer, acts, B, w: { idle: 1, walk: 0, run: 0 }, pid: inf.pid, mat, built, scan: !!useScan });
     this.scene.add(g);
     return g;
   }
@@ -527,7 +567,7 @@ class Render3D {
       let g = this.players.get(p.pid); if (!g) { g = this.makePlayer(inf); this.players.set(p.pid, g); }
       seen.add(p.pid); g.visible = true;
       g.position.copy(V(p.x, p.y, 0));
-      const pk = this.plK || 1; if (g.userData.hs !== inf.h * 10 + pk) { g.userData.hs = inf.h * 10 + pk; const sy = (inf.h || 180) / 177 * pk, bmi = (inf.w || 75) / Math.pow((inf.h || 180) / 100, 2); const sx = g.userData.built ? sy * Math.max(.93, Math.min(1.12, Math.sqrt(bmi / 23))) : sy * Math.max(.98, Math.min(1.22, Math.sqrt(bmi / 23) * 1.1)); g.userData.body.scale.set(sx, sy, sx); }
+      const pk = this.plK || 1; if (g.userData.hs !== inf.h * 10 + pk) { g.userData.hs = inf.h * 10 + pk; const sy = (inf.h || 180) / (g.userData.scan ? 180 : 177) * pk, bmi = (inf.w || 75) / Math.pow((inf.h || 180) / 100, 2); const sx = g.userData.built ? sy * Math.max(.93, Math.min(1.12, Math.sqrt(bmi / 23))) : sy * Math.max(.98, Math.min(1.22, Math.sqrt(bmi / 23) * 1.1)); g.userData.body.scale.set(sx, sy, sx); }
       g.rotation.y = Math.atan2(Math.cos(p.face), -Math.sin(p.face));
       if (g.userData.kind === 'human') this.animateHuman(g, p, adt); else this.animate(g, p, adt);
       g.userData.ring.visible = opt.selected === p.pid;

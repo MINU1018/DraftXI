@@ -20,11 +20,11 @@ const X = x => 52.5 + x, Y = y => 34 - y; // 공격 방향 → 오른쪽
 
 function ctxOf() {
   const t = T(); if (!t) return null;
-  let f = t.last ? t.fx[t.last.fx] : null, dt = f && f.r ? t.last.dt : null;
-  if (!f || !f.r) { f = t.fx.filter(x => x.r && (x.h === ME || x.a === ME)).pop() || null; dt = null; }
-  if (!f) return null;
+  const list = t.fx.filter(x => x.r && (x.h === ME || x.a === ME)); if (!list.length) return null;
+  let f = U.rvFx != null ? list.find(x => x.i === U.rvFx) : null; if (!f) f = (t.last && list.find(x => x.i === t.last.fx)) || list[list.length - 1];
+  const dt = (t.reviews && t.reviews[f.i]) || (t.last && t.last.fx === f.i && t.last.dt) || null;
   const my = f.h === ME ? 0 : 1; const ms = [f.h, f.a];
-  return { t, f, r: f.r, dt, my, ms, teams: ms.map(tm) };
+  return { t, f, r: f.r, dt, my, ms, teams: ms.map(tm), list };
 }
 function pitch(cls, opt) {
   opt = opt || {}; const ln = { fill: 'none', stroke: 'rgba(255,255,255,.32)', 'stroke-width': .3 };
@@ -206,7 +206,9 @@ function tabQuad(X0) {
 }
 
 // ---------- 3. 히트맵 · 평균 위치 ----------
-function teamHeat(X0, s) { const { dt, r } = X0; const n = dt.hw[0] * dt.hw[1]; const sum = new Float32Array(n); for (const p of r.players) if (p.side === s && p.code !== 'GK' && dt.hm[p.id]) { const a = dt.hm[p.id]; for (let i = 0; i < n; i++) sum[i] += a[i]; } return sum; }
+// 히트맵은 base64(0~255) 또는 예전 저장분의 숫자 배열
+function hmOf(dt, id) { const v = dt.hm[id]; if (!v) return null; if (typeof v !== 'string') return v; const s = atob(v); const u = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i); return u; }
+function teamHeat(X0, s) { const { dt, r } = X0; const n = dt.hw[0] * dt.hw[1]; const sum = new Float32Array(n); for (const p of r.players) if (p.side === s && p.code !== 'GK' && dt.hm[p.id]) { const a = hmOf(dt, p.id); for (let i = 0; i < n; i++) sum[i] += a[i]; } return sum; }
 function network(X0, s) {
   const { dt, r, t } = X0; const col = tcol(X0, s); const svg = pitch('', { label: '평균 위치와 패스 연결' });
   const ids = r.xi[s].map(x => x[0]).filter(id => dt.pos[id]); const set = new Set(ids); const pair = {}, cnt = {};
@@ -220,7 +222,7 @@ function network(X0, s) {
   return svg;
 }
 const sideSeg = X0 => seg([[0, X0.teams[0].name], [1, X0.teams[1].name]], U.rvSide == null ? X0.my : U.rvSide, v => { U.rvSide = v; U.rvPid = null; TL.render(); });
-const needDt = () => h('div', { class: 'hint' }, '이 경기는 히트맵·패스 기록이 저장되지 않았습니다. 새로 치르는 경기부터 표시됩니다.');
+const needDt = () => h('div', { class: 'hint' }, '이 경기는 히트맵·패스 기록이 저장되지 않았습니다(이 기능이 생기기 전에 치른 경기). 요약·슈팅·선수 기록은 볼 수 있습니다.');
 function tabHeat(X0) {
   const { dt, r, t } = X0; if (!dt) return panel('히트맵 · 위치', null, needDt());
   const s = U.rvSide == null ? X0.my : U.rvSide; const rows = plRows(X0, s); const p = U.rvPid != null ? rows.find(x => String(x.id) === String(U.rvPid)) : null; const pid = p ? p.id : null;
@@ -228,7 +230,7 @@ function tabHeat(X0) {
     h('div', { class: 'dx-two' }, panel(`${X0.teams[0].name} 팀 히트맵`, h('span', { class: 'dim' }, '공격 방향 →'), TL.heatmapSVG(teamHeat(X0, 0), { label: '홈 팀 히트맵' })), panel(`${X0.teams[1].name} 팀 히트맵`, h('span', { class: 'dim' }, '공격 방향 →'), TL.heatmapSVG(teamHeat(X0, 1), { label: '원정 팀 히트맵' }))),
     panel('평균 위치 · 패스 연결망', sideSeg(X0), h('div', { class: 'dx-two' }, h('div', null, network(X0, s), h('div', { class: 'hint' }, '원 크기 = 성공한 패스 수, 선 굵기 = 두 선수 사이 패스 횟수(3회 이상). 선수를 누르면 오른쪽에 개인 히트맵이 나옵니다.')),
       h('div', { class: 'stack' }, h('div', { class: 'row' }, h('span', { class: 'lbl' }, '선수'), sel([['', '선수 선택']].concat(rows.map(x => [x.id, `${x.num}. ${pname(x.d)}`])), pid || '', v => { U.rvPid = v || null; TL.render(); })),
-        p && dt.hm[p.id] ? h('div', null, head(`${p.d.name} 히트맵`, `${p.min}분 · 평점 ${p.rt ? p.rt.toFixed(1) : '-'}`), TL.heatmapSVG(dt.hm[p.id], { label: p.d.name + ' 히트맵' })) : h('div', { class: 'hint' }, '선수를 고르면 개인 히트맵이 표시됩니다.')))));
+        p && dt.hm[p.id] ? h('div', null, head(`${p.d.name} 히트맵`, `${p.min}분 · 평점 ${p.rt ? p.rt.toFixed(1) : '-'}`), TL.heatmapSVG(hmOf(dt, p.id), { label: p.d.name + ' 히트맵' })) : h('div', { class: 'hint' }, '선수를 고르면 개인 히트맵이 표시됩니다.')))));
 }
 
 // ---------- 4. 패스맵 ----------
@@ -284,7 +286,10 @@ function viewReview() {
   if (!X0) { w.append(h('h1', null, '경기 분석'), h('p', { class: 'hint' }, '아직 치른 경기가 없습니다. 첫 경기를 마치면 여기에서 히트맵, 패스맵, 팀 지표 비교, 선수별 평가를 볼 수 있습니다.')); return w; }
   const { f, r, teams, t } = X0; const tab = TABS.find(x => x[0] === U.rvTab) || TABS[0]; const d = t.days.find(x => x.fx.includes(f.i));
   const scorers = s => r.goals.filter(g => g.side === s).map(g => `${g.name}${g.own ? ' (자책)' : ''} ${g.min}'`).join(' · ');
-  w.append(h('div', { class: 'rv-top' }, h('div', { class: 'lbl' }, `직전 경기 분석 · ${d ? d.label : ''}`),
+  const li = X0.list.findIndex(x => x.i === f.i); const lab = x => { const dd = t.days.find(y => y.fx.includes(x.i)); const s = x.h === ME ? 0 : 1; const res = x.r.w === s ? '승' : x.r.w === -1 ? '무' : '패'; return `${dd ? dd.label : ''} · ${x.h === ME ? 'vs' : '@'} ${tm(x.h === ME ? x.a : x.h).name} ${x.r.score[s]}-${x.r.score[1 - s]} (${res})${t.reviews && t.reviews[x.i] ? '' : ' · 요약만'}`; };
+  const pick = i => { U.rvFx = X0.list[i].i; U.rvPid = null; TL.render(); };
+  w.append(h('div', { class: 'rv-top' }, h('div', { class: 'row', style: { justifyContent: 'center', flexWrap: 'wrap', gap: '8px' } }, h('button', { class: 'btn sm', disabled: li <= 0, onclick: () => pick(li - 1) }, '◀ 이전 경기'), sel(X0.list.map((x, i) => [String(i), lab(x)]).reverse(), String(li), v => pick(+v), 'rvsel'), h('button', { class: 'btn sm', disabled: li >= X0.list.length - 1, onclick: () => pick(li + 1) }, '다음 경기 ▶')),
+    h('div', { class: 'lbl' }, `경기 분석 · ${d ? d.label : ''} · 저장된 경기 ${X0.list.length}개`),
     h('div', { class: 'rv-score' }, h('div', { class: 'tm' }, badge(teams[0], 'lg'), h('div', null, h('b', null, U.tn ? U.tn(X0.ms[0]) : teams[0].name), h('span', { class: 'dim' }, `${r.form[0]} · xG ${f2(r.xg[0])}`))), h('div', { class: 'sc' }, h('b', null, `${r.score[0]} - ${r.score[1]}`), r.pen ? h('span', { class: 'dim' }, `승부차기 ${r.pen[0]}-${r.pen[1]}`) : r.et ? h('span', { class: 'dim' }, '연장') : null), h('div', { class: 'tm r' }, h('div', null, h('b', null, U.tn ? U.tn(X0.ms[1]) : teams[1].name), h('span', { class: 'dim' }, `${r.form[1]} · xG ${f2(r.xg[1])}`)), badge(teams[1], 'lg'))),
     h('div', { class: 'rv-gl' }, h('span', null, scorers(0)), h('span', null, scorers(1))),
     h('div', { class: 'row', style: { justifyContent: 'center', flexWrap: 'wrap' } }, h('button', { class: 'btn primary', onclick: () => TL.go('m_tactics') }, '전술 수정하러 가기'), h('button', { class: 'btn', onclick: () => U.matchModal(f) }, '경기 상세 · 다시 보기'), h('button', { class: 'btn', onclick: () => TL.go('m_squad') }, '스쿼드'))),

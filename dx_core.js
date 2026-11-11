@@ -472,8 +472,8 @@ function applyResult(T, f, res, rp) {
   if (f.r) return f.r; res = JSON.parse(JSON.stringify(res));
   if (f.ko) resolveKO(T, f, res); else res.w = res.score[0] > res.score[1] ? 0 : res.score[0] < res.score[1] ? 1 : -1;
   if (rp) res.rp = rp;
-  // 상세 분석 자료는 용량이 커서 내 팀의 가장 최근 경기 1개만 따로 보관
-  if (res.dt) { if (T.mgrs[f.h].ctrl === 'user' || T.mgrs[f.a].ctrl === 'user') T.last = { fx: f.i, dt: res.dt }; delete res.dt; }
+  // 상세 분석 자료(히트맵·패스 등)는 내 팀이 치른 모든 경기를 경기 번호별로 보관
+  if (res.dt) { if (T.mgrs[f.h].ctrl === 'user' || T.mgrs[f.a].ctrl === 'user') { T.reviews = T.reviews || {}; if (T.last && T.last.dt) { T.reviews[T.last.fx] = T.last.dt; } T.reviews[f.i] = res.dt; T.last = { fx: f.i }; } delete res.dt; }
   // 출전 정지: 이 경기에 걸려 있던 정지는 소화, 새 퇴장·경고 누적 반영
   if (T.cfg.susp) { for (const m of [f.h, f.a]) for (const id of T.roster[m]) if (T.susp[id] > 0) { T.susp[id]--; if (!T.susp[id]) delete T.susp[id]; }
     for (const p of res.players) { if (p.red) T.susp[p.id] = (T.susp[p.id] || 0) + 1; else if (p.yc) { T.ycAcc[p.id] = (T.ycAcc[p.id] || 0) + p.yc; if (T.ycAcc[p.id] >= 3) { T.ycAcc[p.id] -= 3; T.susp[p.id] = (T.susp[p.id] || 0) + 1; } } } }
@@ -501,14 +501,14 @@ function fullSummary(M) {
   };
 }
 
-// 경기 분석 화면용 상세 기록 (내 경기 1개만 보관): 히트맵, 평균 위치, 패스 전체, 5분 단위 흐름, 선수별 추가 지표
+// 경기 분석 화면용 상세 기록 (내 팀 경기마다 보관): 히트맵, 평균 위치, 패스 전체, 5분 단위 흐름, 선수별 추가 지표
 // 좌표는 모두 "그 팀이 오른쪽으로 공격"하는 기준 (x −52.5~52.5, y −34~34)
 function matchDetail(M) {
   const idOf = pid => { const p = M.pidList[pid]; return p ? p.d.id : null; };
   const KI = { ground: 0, lofted: 1, through: 2, cross: 3, roll: 4, throw: 5 };
   const hm = {}, pos = {}, ex = {};
   for (const p of M.pidList) { if (!(p.r.min > 0)) continue; const id = p.d.id;
-    if (p.hm) hm[id] = Array.from(p.hm, v => Math.min(999, v));
+    if (p.hm) { let str = ''; for (let i = 0; i < p.hm.length; i++) str += String.fromCharCode(Math.min(255, p.hm[i])); hm[id] = btoa(str); } // 용량을 줄이려고 0~255로 잘라 base64로 저장
     if (p.sn) pos[id] = [+(p.sx / p.sn).toFixed(1), +(p.sy / p.sn).toFixed(1)];
     ex[id] = { lost: p.r.lost || 0, blk: p.r.blk || 0, clr: p.r.clr || 0, aer: p.r.aer || 0, rec: p.r.rec || 0, tch: p.r.tch || 0, bt: p.r.beaten || 0, en: Math.round(p.energy) }; }
   const pass = M.passLog.filter(x => x.k !== 'throw').map(x => [x.s, idOf(x.p), Math.round(x.x0), Math.round(x.y0), Math.round(x.x1), Math.round(x.y1), KI[x.k] || 0, x.ok ? 1 : 0, x.q >= 0 ? idOf(x.q) : null]);
